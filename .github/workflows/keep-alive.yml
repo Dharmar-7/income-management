@@ -1,14 +1,15 @@
 name: Keep API Warm
 
 # Why: the API is a Render service. On the free tier it sleeps after ~15 min
-# with no inbound HTTP (a ~50s cold start on the next request), and once the
-# dyno sleeps its internal cron stops, so the Neon database then autosuspends
-# (~5 min) and adds its own cold start. Pinging /health on a schedule keeps the
-# dyno awake, which keeps the in-process cron alive, which keeps Neon warm.
+# with no inbound HTTP (a ~50s cold start on the next request), and the Neon
+# database autosuspends after ~5 min idle (2-5s resume on the next query).
+# Pinging /health/deep — which runs SELECT 1 — keeps BOTH awake in one call.
+# The old /health ping only woke the dyno; Neon could still suspend if the
+# in-process cron had nothing DB-bound to do.
 #
 # Note: GitHub's scheduled runners can be delayed by 5-15 min under load. For
 # guaranteed sub-5-min pings, also/instead point a free uptime monitor
-# (uptimerobot.com or cron-job.org) at the same /health URL.
+# (uptimerobot.com or cron-job.org) at the same /health/deep URL.
 
 on:
   schedule:
@@ -19,11 +20,11 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint
+      - name: Ping deep health endpoint (wakes Render + Neon)
         run: |
           for i in 1 2 3; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
-              https://income-management-xo9d.onrender.com/health)
+              https://income-management-xo9d.onrender.com/health/deep)
             echo "Attempt $i -> HTTP $code"
             if [ "$code" = "200" ]; then exit 0; fi
             sleep 20
