@@ -118,6 +118,7 @@ export default function TransactionList() {
       const token = await getToken();
       await apiFetch(`/transactions/${id}`, token!, { method: 'DELETE' });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
     } catch {
       alert('Failed to delete transaction.');
     } finally {
@@ -131,7 +132,10 @@ export default function TransactionList() {
       <AddTransactionModal
         categories={categories ?? []}
         onClose={() => setShowModal(false)}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['transactions'] })}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
+        }}
       />
     )}
     <div className="space-y-4">

@@ -38,10 +38,24 @@ export class CalendarService {
 
     const events: { date: Date; kind: CalendarEvent['kind']; title: string; amount: number | null; icon: string }[] = [];
 
+    // All five sources fetched in one parallel batch — the DB is cross-region,
+    // so each sequential round-trip would add ~1s of wall-clock time.
+    const [recurring, loans, goals, notes, eventRows] = await Promise.all([
+      this.prisma.recurringTransaction.findMany({
+        where: { userId, isActive: true, nextDueDate: { gte: start, lte: end } },
+      }),
+      this.prisma.loan.findMany({ where: { userId, isActive: true } }),
+      this.prisma.goal.findMany({
+        where: { userId, targetDate: { gte: start, lte: end } },
+      }),
+      this.prisma.note.findMany({
+        where: { userId, reminderAt: { gte: start, lte: end } },
+        select: { title: true, reminderAt: true },
+      }),
+      this.prisma.event.findMany({ where: { userId } }),
+    ]);
+
     // Recurring bills / income
-    const recurring = await this.prisma.recurringTransaction.findMany({
-      where: { userId, isActive: true, nextDueDate: { gte: start, lte: end } },
-    });
     for (const r of recurring) {
       const income = r.type === 'CREDIT';
       events.push({
@@ -54,7 +68,6 @@ export class CalendarService {
     }
 
     // Loan EMIs — next due date computed from the EMI day-of-month
-    const loans = await this.prisma.loan.findMany({ where: { userId, isActive: true } });
     for (const l of loans) {
       const due = nextMonthlyDate(l.emiDay, now);
       if (due >= start && due <= end) {
@@ -63,9 +76,6 @@ export class CalendarService {
     }
 
     // Goal target dates
-    const goals = await this.prisma.goal.findMany({
-      where: { userId, targetDate: { gte: start, lte: end } },
-    });
     for (const g of goals) {
       if (g.targetDate) {
         events.push({ date: g.targetDate, kind: 'goal', title: `Goal: ${g.name}`, amount: g.targetAmount, icon: g.icon });
@@ -73,9 +83,6 @@ export class CalendarService {
     }
 
     // Note reminders
-    const notes = await this.prisma.note.findMany({
-      where: { userId, reminderAt: { gte: start, lte: end } },
-    });
     for (const n of notes) {
       if (n.reminderAt) {
         events.push({ date: n.reminderAt, kind: 'reminder', title: n.title?.trim() || 'Reminder', amount: null, icon: '🔔' });
@@ -83,7 +90,6 @@ export class CalendarService {
     }
 
     // Memorable events — next yearly occurrence (birthdays, anniversaries)
-    const eventRows = await this.prisma.event.findMany({ where: { userId } });
     for (const ev of eventRows) {
       const info = occurrenceInfo(ev.date, now);
       if (info.next >= start && info.next <= end) {

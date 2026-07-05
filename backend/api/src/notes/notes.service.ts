@@ -218,13 +218,12 @@ export class NotesService {
 
   async getAllTags(clerkId: string) {
     const userId = await this.resolveUserId(clerkId);
-    const notes = await this.prisma.note.findMany({
-      where: { userId },
-      select: { tags: true },
-    });
-    const tagSet = new Set<string>();
-    notes.forEach(n => n.tags.forEach(t => tagSet.add(t)));
-    return Array.from(tagSet).sort();
+    // Distinct tags computed in the DB — avoids pulling every note row
+    // (content included) over the wire just to flatten their tag arrays.
+    const rows = await this.prisma.$queryRaw<{ tag: string }[]>`
+      SELECT DISTINCT UNNEST(tags) AS tag FROM "Note" WHERE "userId" = ${userId} ORDER BY tag
+    `;
+    return rows.map(r => r.tag);
   }
 
   // ─── Lock / Unlock ────────────────────────────────────────────────────────

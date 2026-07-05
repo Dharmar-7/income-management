@@ -103,6 +103,7 @@ export default function RecurringScreen() {
         await apiFetch(`/recurring/${item.id}/pay`, token!, { method: 'POST' });
         qc.invalidateQueries({ queryKey: ['recurring'] });
         qc.invalidateQueries({ queryKey: ['transactions'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] }); // payment creates a tx
       },
     });
   }

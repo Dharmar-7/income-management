@@ -101,6 +101,7 @@ export default function LoansScreen() {
         await apiFetch(`/loans/${loan.id}/pay`, token!, { method: 'POST' });
         qc.invalidateQueries({ queryKey: ['loans'] });
         qc.invalidateQueries({ queryKey: ['transactions'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] }); // EMI creates a DEBIT tx
       },
     });
   }

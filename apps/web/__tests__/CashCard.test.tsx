@@ -38,9 +38,10 @@ function mockLoading() {
 }
 
 function mockBalance(balance: number, totalIn = balance, totalOut = 0) {
+  // CashCard reads the shared dashboard aggregate — cash lives under data.cash
   mockUseQuery.mockReturnValue({
     isLoading: false,
-    data: { balance, totalIn, totalOut },
+    data: { cash: { balance, totalIn, totalOut } },
   } as any);
 }
 
@@ -167,7 +168,7 @@ describe('CashCard', () => {
   // ─── Form submission ─────────────────────────────────────────────────────
 
   describe('form submission', () => {
-    it('invalidates cash-balance query after successful add', async () => {
+    it('invalidates the dashboard aggregate after successful add', async () => {
       const qc = mockQueryClient();
       mockBalance(1000);
       render(<CashCard />);
@@ -178,7 +179,7 @@ describe('CashCard', () => {
       fireEvent.click(screen.getByText('Add Cash'));
 
       await waitFor(() => {
-        expect(qc.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['cash-balance'] });
+        expect(qc.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] });
       });
     });
   });

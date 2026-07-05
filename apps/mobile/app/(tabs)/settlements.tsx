@@ -110,6 +110,7 @@ export default function SettlementsScreen() {
         await apiFetch(`/settlements/${item.id}`, token!, { method: 'DELETE' });
         qc.invalidateQueries({ queryKey: ['settlements'] });
         qc.invalidateQueries({ queryKey: ['transactions'] });
+        qc.invalidateQueries({ queryKey: ['dashboard'] }); // tx types revert → summary changes
       },
     });
   }
@@ -205,6 +206,7 @@ export default function SettlementsScreen() {
           setSheetOpen(false);
           qc.invalidateQueries({ queryKey: ['settlements'] });
           qc.invalidateQueries({ queryKey: ['transactions'] });
+          qc.invalidateQueries({ queryKey: ['dashboard'] }); // tx types become TRANSFER → summary changes
         }}
       />
 

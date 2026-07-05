@@ -567,6 +567,7 @@ export default function SavingsManager() {
     queryClient.invalidateQueries({ queryKey: ['savings-summary'] });
     queryClient.invalidateQueries({ queryKey: ['savings-platforms'] });
     queryClient.invalidateQueries({ queryKey: ['savings-list'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // investments feed dashboard savings + net worth
   };
 
   const { data: summary, isLoading: summaryLoading } = useQuery({

@@ -37,6 +37,18 @@ export function computeStreaks(daySet: Set<string>, todayIso: string): { current
   return { current, longest };
 }
 
+// Distinct UTC days (YYYY-MM-DD) with any logged activity. Computed in the DB —
+// previously we fetched every Transaction/CashTransaction row's createdAt over a
+// cross-region link just to dedupe them into days.
+export async function fetchActiveDays(prisma: PrismaService, userId: string): Promise<Set<string>> {
+  const rows = await prisma.$queryRaw<{ day: string }[]>`
+    SELECT DISTINCT DATE("createdAt")::text AS day FROM "Transaction" WHERE "userId" = ${userId}
+    UNION
+    SELECT DISTINCT DATE("createdAt")::text AS day FROM "CashTransaction" WHERE "userId" = ${userId}
+  `;
+  return new Set(rows.map(r => r.day));
+}
+
 export interface Achievement {
   key: string;
   title: string;
@@ -58,19 +70,14 @@ export class StreaksService {
   async getSummary(clerkId: string) {
     const userId = await this.resolveUserId(clerkId);
 
-    const [txDates, cashDates, txCount, savingsCount, budgetsCount, notesCount, goals] = await Promise.all([
-      this.prisma.transaction.findMany({ where: { userId }, select: { createdAt: true } }),
-      this.prisma.cashTransaction.findMany({ where: { userId }, select: { createdAt: true } }),
+    const [days, txCount, savingsCount, budgetsCount, notesCount, goals] = await Promise.all([
+      fetchActiveDays(this.prisma, userId),
       this.prisma.transaction.count({ where: { userId } }),
       this.prisma.saving.count({ where: { userId } }),
       this.prisma.budget.count({ where: { userId } }),
       this.prisma.note.count({ where: { userId } }),
       this.prisma.goal.findMany({ where: { userId }, select: { savedAmount: true, targetAmount: true } }),
     ]);
-
-    // Distinct days the user logged something (UTC day — simple + stable).
-    const days = new Set<string>();
-    for (const t of [...txDates, ...cashDates]) days.add(t.createdAt.toISOString().slice(0, 10));
 
     const todayIso = new Date().toISOString().slice(0, 10);
     const { current, longest } = computeStreaks(days, todayIso);

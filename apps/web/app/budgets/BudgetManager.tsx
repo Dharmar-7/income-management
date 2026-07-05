@@ -83,8 +83,8 @@ export default function BudgetManager() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['budget-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['budgets', month, year] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setShowForm(false);
       setFormCategoryId('');
       setFormAmount('');
@@ -98,8 +98,8 @@ export default function BudgetManager() {
       return apiFetch(`/budgets/${id}`, token!, { method: 'DELETE' });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] });
-      queryClient.invalidateQueries({ queryKey: ['budget-progress'] });
+      queryClient.invalidateQueries({ queryKey: ['budgets', month, year] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TransactionType, CashFlow } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { computeStreaks } from '../streaks/streaks.service';
+import { computeStreaks, fetchActiveDays } from '../streaks/streaks.service';
 
 @Injectable()
 export class DashboardService {
@@ -19,7 +19,7 @@ export class DashboardService {
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
     const todayIso = now.toISOString().slice(0, 10);
 
-    // ── Phase 1: 15 queries fired simultaneously ─────────────────────────────
+    // ── Phase 1: 14 queries fired simultaneously ─────────────────────────────
     const [
       summaryGroups,
       catGroups,
@@ -29,8 +29,7 @@ export class DashboardService {
       cashGroups,
       savAgg,
       nwHistory,
-      txDates,
-      cashDates,
+      activeDays,
       txCount,
       savCount,
       budgCount,
@@ -104,9 +103,8 @@ export class DashboardService {
         orderBy: [{ year: 'desc' }, { month: 'desc' }],
         take: 12,
       }),
-      // 9-15 — streak + achievement inputs
-      this.prisma.transaction.findMany({ where: { userId }, select: { createdAt: true } }),
-      this.prisma.cashTransaction.findMany({ where: { userId }, select: { createdAt: true } }),
+      // 9-14 — streak + achievement inputs (distinct days computed in the DB)
+      fetchActiveDays(this.prisma, userId),
       this.prisma.transaction.count({ where: { userId } }),
       this.prisma.saving.count({ where: { userId } }),
       this.prisma.budget.count({ where: { userId } }),
@@ -199,9 +197,7 @@ export class DashboardService {
     const networth = { cash: cash.balance, investments, netWorth: netWorthVal, history: nwHistorySorted };
 
     // Streaks & achievements
-    const days = new Set<string>();
-    for (const t of [...txDates, ...cashDates]) days.add(t.createdAt.toISOString().slice(0, 10));
-    const { current, longest } = computeStreaks(days, todayIso);
+    const { current, longest } = computeStreaks(activeDays, todayIso);
     const goalsReached = goals.filter(g => g.savedAmount >= g.targetAmount).length;
 
     const achievements = [
@@ -219,7 +215,7 @@ export class DashboardService {
     const streaks = {
       currentStreak: current,
       longestStreak: longest,
-      activeToday: days.has(todayIso),
+      activeToday: activeDays.has(todayIso),
       unlockedCount: achievements.filter(a => a.unlocked).length,
       total: achievements.length,
       achievements,

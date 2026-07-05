@@ -115,6 +115,7 @@ export default function TransactionsScreen() {
           const token = await getToken();
           await apiFetch(`/transactions/${id}`, token!, { method: 'DELETE' });
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
         } catch {
           setAlertData({ title: 'Error', message: 'Failed to delete transaction.' });
         } finally {
@@ -159,7 +160,10 @@ export default function TransactionsScreen() {
         editing={editingTx}
         categories={categories ?? []}
         onClose={closeSheet}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['transactions'] })}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
+        }}
       />
       {/* Search bar */}
       <View style={styles.searchRow}>

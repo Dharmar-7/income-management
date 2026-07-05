@@ -721,6 +721,9 @@ export default function NotesManager() {
     let timer: ReturnType<typeof setInterval>;
 
     async function checkReminders() {
+      // Skip while the tab is hidden — no point polling (and paying an API
+      // call) for notifications nobody can see; resumes on next tick.
+      if (document.hidden) return;
       try {
         const token = await getToken();
         const due = await apiFetch<{ id: string; title: string | null; content: string }[]>(

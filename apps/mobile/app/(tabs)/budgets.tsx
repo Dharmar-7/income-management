@@ -317,6 +317,7 @@ export default function BudgetsScreen() {
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['budget-progress'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // dashboard shows budget progress
   }
 
   const overCount = data?.data.filter(b => b.percentUsed >= 100).length ?? 0;

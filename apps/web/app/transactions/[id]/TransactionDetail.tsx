@@ -132,11 +132,10 @@ export default function TransactionDetail({ id }: { id: string }) {
       });
     },
     onSuccess: () => {
-      // Invalidate so the list + detail both refresh
+      // Invalidate so the list, detail and dashboard aggregate all refresh
       queryClient.invalidateQueries({ queryKey: ['transaction', id] });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['by-category'] });
-      queryClient.invalidateQueries({ queryKey: ['summary'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setIsEditing(false);
     },
   });

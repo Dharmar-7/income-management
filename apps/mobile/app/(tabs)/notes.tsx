@@ -746,12 +746,24 @@ function NoteSheet({
 
 // ─── Main Screen ────────────────────────────────────────────────────────────────
 
+// Debounce a changing value — waits `delay` ms after the last change before
+// propagating, so typing in search doesn't fire an API call per keystroke.
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function NotesScreen() {
   const { getToken } = useAuth();
   const { theme: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
+  const [searchInput, setSearch] = useState('');
+  const search = useDebounce(searchInput, 300);
   const [activeTag, setActiveTag] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [editNote, setEditNote] = useState<Note | null | 'new'>(null);
@@ -917,13 +929,13 @@ export default function NotesScreen() {
       <View style={styles.searchRow}>
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
-          value={search}
+          value={searchInput}
           onChangeText={setSearch}
           placeholder="Search notes…"
           placeholderTextColor={c.textFaint}
           style={styles.searchInput}
         />
-        {search.length > 0 && (
+        {searchInput.length > 0 && (
           <TouchableOpacity onPress={() => setSearch('')}>
             <Text style={{ color: c.textFaint, fontSize: 14 }}>✕</Text>
           </TouchableOpacity>

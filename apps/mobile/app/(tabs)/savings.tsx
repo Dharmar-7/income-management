@@ -117,7 +117,7 @@ export default function SavingsScreen() {
     queryClient.invalidateQueries({ queryKey: ['savings-platforms'] });
     queryClient.invalidateQueries({ queryKey: ['savings-list'] });
     queryClient.invalidateQueries({ queryKey: ['goals'] });
-    queryClient.invalidateQueries({ queryKey: ['networth'] }); // goals/investments feed net worth
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // investments feed dashboard savings + net worth
   };
 
   function openAddPlatform() { setEditingSaving(null); setSheetMode('platform'); }

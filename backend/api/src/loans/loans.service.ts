@@ -79,35 +79,37 @@ export class LoansService {
       throw new Error('All EMIs already paid for this loan.');
     }
 
-    // Record payment
-    await this.prisma.loanPayment.create({
-      data: { loanId: id, amount: loan.emiAmount, paidDate: new Date() },
-    });
-
-    // Mark loan closed if this was the last EMI
+    // The payment record, the mirror DEBIT transaction, and the possible
+    // loan-closure update are independent — run them in one parallel batch
+    // instead of 3-4 sequential cross-region round-trips.
     const newPaidEmis = paidEmis + 1;
-    if (newPaidEmis >= loan.tenure) {
-      await this.prisma.loan.update({ where: { id }, data: { isActive: false } });
-    }
+    const nowClosed = newPaidEmis >= loan.tenure;
+    const [payment] = await Promise.all([
+      this.prisma.loanPayment.create({
+        data: { loanId: id, amount: loan.emiAmount, paidDate: new Date() },
+      }),
+      this.prisma.transaction.create({
+        data: {
+          userId,
+          amount: loan.emiAmount,
+          merchant: loan.lender,
+          description: `EMI: ${loan.name}`,
+          date: new Date(),
+          type: 'DEBIT',
+          source: 'MANUAL',
+        },
+      }),
+      ...(nowClosed
+        ? [this.prisma.loan.update({ where: { id }, data: { isActive: false } })]
+        : []),
+    ]);
 
-    // Create a DEBIT transaction so it appears in transaction history
-    await this.prisma.transaction.create({
-      data: {
-        userId,
-        amount: loan.emiAmount,
-        merchant: loan.lender,
-        description: `EMI: ${loan.name}`,
-        date: new Date(),
-        type: 'DEBIT',
-        source: 'MANUAL',
-      },
+    // Compose the response from what we already hold — no refetch needed.
+    return this.enrich({
+      ...loan,
+      isActive: nowClosed ? false : loan.isActive,
+      payments: [payment, ...loan.payments],
     });
-
-    const updated = await this.prisma.loan.findUnique({
-      where: { id },
-      include: { payments: { orderBy: { paidDate: 'desc' } } },
-    });
-    return this.enrich(updated!);
   }
 
   async remove(clerkId: string, id: string) {
