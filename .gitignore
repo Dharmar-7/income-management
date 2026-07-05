@@ -72,3 +72,6 @@ apps/mobile/scripts/build-logo-gallery.mjs
 backend/api/sample*.pdf
 backend/api/sample*.png
 backend/api/sample*.jpg
+
+# Personal life-tracker files (not app code)
+life-os/

@@ -27,6 +27,7 @@ const LABELS: Record<MainRoute, string> = {
 };
 
 const MORE_ITEMS = [
+  { label: 'Habits',      icon: '🔥', route: 'habits'      },
   { label: 'Notes',       icon: '📝', route: 'notes'       },
   { label: 'Reports',     icon: '📊', route: 'reports'     },
   { label: 'Import',      icon: '📥', route: 'import'      },

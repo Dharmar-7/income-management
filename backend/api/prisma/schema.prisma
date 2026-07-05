@@ -44,6 +44,8 @@ model User {
   settlements           Settlement[]
   documents             Document[]
   events                Event[]
+  habits                Habit[]
+  habitCheckins         HabitCheckin[]
 }
 
 // ─────────────────────────────────────────
@@ -522,4 +524,60 @@ enum EventType {
   MEMORIAL
   FESTIVAL
   CUSTOM
+}
+
+// ─────────────────────────────────────────
+// HABIT
+// A daily habit the user wants to build (Workout,
+// Reading, AI Learning…). Progress is tracked via
+// HabitCheckin rows — one per day the habit is ticked.
+// ─────────────────────────────────────────
+model Habit {
+  id         String   @id @default(uuid())
+  name       String                            // e.g. "Workout", "AI Learning"
+  icon       String   @default("✅")            // emoji shown on the row
+  color      String   @default("indigo")        // accent key — indigo/green/orange/teal/violet/danger
+  weeklyTarget Int    @default(7)              // how many days/week is "success" (1–7)
+  scheduleDays Int[]  @default([0,1,2,3,4,5,6]) // 0=Sun … 6=Sat — which days this habit is planned
+  order      Int      @default(0)              // manual sort order on the board
+  isArchived Boolean  @default(false)
+  note       String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkins   HabitCheckin[]
+
+  @@index([userId, isArchived])
+}
+
+// ─────────────────────────────────────────
+// HABIT CHECK-IN
+// One row per (habit, day) the user marked. Absence of
+// a row = not done. status distinguishes a full tick (✅)
+// from a partial one (🟡), mirroring the Life OS board.
+// ─────────────────────────────────────────
+model HabitCheckin {
+  id      String      @id @default(uuid())
+  day     String                              // calendar day "YYYY-MM-DD" (local day, kept as string for stable streaks)
+  status  HabitStatus @default(DONE)
+
+  createdAt DateTime  @default(now())
+
+  habitId String
+  userId  String                              // denormalised for cheap per-user date scans (powers streaks)
+
+  habit   Habit @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One check-in per habit per day.
+  @@unique([habitId, day])
+  @@index([userId, day])
+}
+
+enum HabitStatus {
+  DONE     // ✅ full completion (counts 1.0)
+  PARTIAL  // 🟡 partial completion (counts 0.5)
 }
