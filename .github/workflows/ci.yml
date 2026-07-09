@@ -1,0 +1,67 @@
+name: CI
+
+# Type-check + test every push before it reaches Render/Vercel/EAS.
+# This is the gate that would have caught the app.module.ts import of a
+# module whose files were never committed (11 days of broken deploys).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch cancels the older in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend — tsc + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies (runs prisma generate via postinstall)
+        run: npm ci
+      - name: Type-check
+        working-directory: backend/api
+        run: npx tsc --noEmit
+      - name: Tests
+        working-directory: backend/api
+        run: npx jest --ci
+
+  web:
+    name: Web — tsc + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        working-directory: apps/web
+        run: npx tsc --noEmit
+      - name: Tests
+        working-directory: apps/web
+        run: npx jest --ci
+
+  mobile:
+    name: Mobile — tsc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Type-check
+        working-directory: apps/mobile
+        run: npx tsc --noEmit

@@ -1,9 +1,11 @@
 import 'dotenv/config';
+import './instrument'; // Sentry — must load before Nest/Prisma
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import compression from 'compression';
+import { json, urlencoded } from 'express';
 
 // Crash immediately if any required environment variable is missing.
 // Better to fail loudly at boot than to fail silently during a real request.
@@ -25,7 +27,12 @@ function validateEnv() {
 async function bootstrap() {
   validateEnv();
 
-  const app = await NestFactory.create(AppModule);
+  // bodyParser disabled so we can raise the JSON limit: documents and note
+  // images arrive as base64 in JSON, and a 5 MB file is ~6.8 MB encoded —
+  // Express's default 100 KB limit would reject them with 413.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '8mb' }));
+  app.use(urlencoded({ extended: true, limit: '8mb' }));
 
   // Helmet — sets ~15 secure HTTP response headers automatically.
   // e.g. X-Content-Type-Options: nosniff, X-Frame-Options: DENY, etc.

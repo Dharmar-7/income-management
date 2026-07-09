@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
+import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggingInterceptor } from './common/logging.interceptor';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -33,6 +34,9 @@ import { HabitsModule } from './habits/habits.module';
 
 @Module({
   imports: [
+    // Sentry must come first so its filter wraps everything; it is a no-op
+    // when SENTRY_DSN is unset (init in instrument.ts is skipped).
+    SentryModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     ScheduleModule.forRoot(),   // enables @Cron decorators
     PrismaModule,
@@ -64,6 +68,8 @@ import { HabitsModule } from './habits/habits.module';
   controllers: [AppController],
   providers: [
     AppService,
+    // Report unhandled exceptions to Sentry (inert when SENTRY_DSN unset)
+    { provide: APP_FILTER, useClass: SentryGlobalFilter },
     // Apply rate limiting globally to all routes
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Log every request with userId, method, path, and duration

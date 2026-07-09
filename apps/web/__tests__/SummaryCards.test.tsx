@@ -35,7 +35,8 @@ function mockLoading() {
   } as ReturnType<typeof useQuery>);
 }
 
-// Tells useQuery to return a summary payload
+// Tells useQuery to return a dashboard payload — SummaryCards reads the shared
+// aggregate, so the summary lives under data.summary.
 function mockData(summary: {
   totalIncome: number;
   totalExpenses: number;
@@ -45,7 +46,7 @@ function mockData(summary: {
 }) {
   mockUseQuery.mockReturnValue({
     isLoading: false,
-    data: summary,
+    data: { summary },
     error: null,
   } as ReturnType<typeof useQuery>);
 }

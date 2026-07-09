@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react-native';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { tokenCache } from '@/lib/tokenCache';
 import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
@@ -8,6 +9,15 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { apiFetch } from '@/lib/api';
+
+// Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
+// build time (eas.json env or an EAS secret).
+if (process.env.EXPO_PUBLIC_SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
+    tracesSampleRate: 0.1,
+  });
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,7 +74,7 @@ function ThemedStatusBar() {
   return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
 }
 
-export default function RootLayout() {
+function RootLayout() {
   return (
     // SafeAreaProvider is REQUIRED: on Expo SDK 54 Android is edge-to-edge, so the
     // app draws under the gesture nav bar. Without this provider every
@@ -86,3 +96,7 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
+
+// Sentry.wrap adds touch-event breadcrumbs and catches render errors at the
+// root. Harmless no-op when Sentry.init was skipped (no DSN).
+export default Sentry.wrap(RootLayout);

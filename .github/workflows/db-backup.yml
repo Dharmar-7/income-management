@@ -1,0 +1,67 @@
+name: DB Backup (weekly)
+
+# Dumps the entire Neon database weekly and stores it as an ENCRYPTED workflow
+# artifact (90-day retention ≈ 13 restore points). Free-tier Neon itself only
+# keeps ~24h of history — this is the real safety net for the financial data.
+#
+# ── Required repository secrets (Settings → Secrets → Actions) ──────────────
+#   DATABASE_URL       — the Neon connection string (same value Render uses)
+#   BACKUP_PASSPHRASE  — any long random string; ALSO SAVE A COPY SOMEWHERE
+#                        SAFE (password manager) — without it backups are
+#                        unreadable. Encryption is mandatory because artifacts
+#                        on a public repo are downloadable by anyone.
+#
+# ── Restore ──────────────────────────────────────────────────────────────────
+#   gpg --batch --passphrase "$BACKUP_PASSPHRASE" -d velora-YYYY-MM-DD.dump.gpg \
+#     | pg_restore --clean --if-exists -d "$TARGET_DATABASE_URL"
+
+on:
+  schedule:
+    - cron: '0 21 * * 0'   # Sundays 21:00 UTC ≈ 02:30 IST Monday
+  workflow_dispatch:        # allow manual backups any time
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets are configured
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "::error::DATABASE_URL and BACKUP_PASSPHRASE secrets must be set (repo Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Dump database (pg_dump 17 via Docker)
+        env:
+          DB_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          STAMP=$(date -u +%F)
+          echo "stamp=$STAMP" >> "$GITHUB_ENV"
+          # Custom format (-Fc) is compressed and lets pg_restore pick tables.
+          docker run --rm postgres:17-alpine \
+            pg_dump --format=custom --no-owner --no-privileges "$DB_URL" \
+            > "velora-$STAMP.dump"
+          ls -lh "velora-$STAMP.dump"
+          # An empty/near-empty dump means something went wrong — fail loudly.
+          [ "$(stat -c%s "velora-$STAMP.dump")" -gt 10240 ] || { echo "::error::Dump is suspiciously small"; exit 1; }
+
+      - name: Encrypt dump (AES-256, symmetric)
+        env:
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          gpg --batch --yes --symmetric --cipher-algo AES256 \
+            --passphrase "$PASSPHRASE" \
+            --output "velora-${{ env.stamp }}.dump.gpg" \
+            "velora-${{ env.stamp }}.dump"
+          rm "velora-${{ env.stamp }}.dump"   # never upload the plaintext dump
+
+      - name: Upload encrypted backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: velora-db-backup-${{ env.stamp }}
+          path: velora-${{ env.stamp }}.dump.gpg
+          retention-days: 90
+          if-no-files-found: error
