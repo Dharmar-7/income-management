@@ -93,7 +93,12 @@ export class NotesController {
 
   // ─── Images ──────────────────────────────────────────────────────────────
   @Post(':id/images')
-  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
+    // Abort the stream as soon as the cap is crossed — without this, an
+    // oversized upload is buffered in full before the service rejects it.
+    limits: { fileSize: 10 * 1024 * 1024 },
+  }))
   addImage(
     @CurrentUser() clerkId: string,
     @Param('id') noteId: string,

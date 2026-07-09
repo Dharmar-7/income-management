@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateDocumentDto } from './dto/create-document.dto';
 import { UpdateDocumentDto } from './dto/update-document.dto';
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB per document
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB per document
 
 // Metadata columns only — never select the heavy `data` blob in list views.
 const META_SELECT = {

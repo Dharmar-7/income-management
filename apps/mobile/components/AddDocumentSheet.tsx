@@ -81,8 +81,8 @@ export default function AddDocumentSheet({ visible, onClose, onSuccess }: Props)
     if (res.canceled) return;
     const file = res.assets[0];
     if (!file) return;
-    if (file.size && file.size > 5 * 1024 * 1024) {
-      setAlertInfo({ title: 'File too large', message: 'Maximum size is 5 MB. Try a compressed PDF or a photo instead.' });
+    if (file.size && file.size > 10 * 1024 * 1024) {
+      setAlertInfo({ title: 'File too large', message: 'Maximum size is 10 MB. Try a compressed PDF or a photo instead.' });
       return;
     }
     const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
@@ -112,7 +112,7 @@ export default function AddDocumentSheet({ visible, onClose, onSuccess }: Props)
       onSuccess();
       onClose();
     } catch (err: any) {
-      setAlertInfo({ title: 'Upload failed', message: err.message ?? 'Please try again (max 5 MB).' });
+      setAlertInfo({ title: 'Upload failed', message: err.message ?? 'Please try again (max 10 MB).' });
     } finally {
       setLoading(false);
     }

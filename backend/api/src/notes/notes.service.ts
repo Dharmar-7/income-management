@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 @Injectable()
 export class NotesService {
@@ -134,7 +134,7 @@ export class NotesService {
     if (!note) throw new NotFoundException('Note not found.');
 
     if (file.size > MAX_IMAGE_SIZE) {
-      throw new BadRequestException('Image must be under 5 MB.');
+      throw new BadRequestException('Image must be under 10 MB.');
     }
 
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];

@@ -437,11 +437,18 @@ function NoteSheet({
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.7,
-      base64: true,
     });
 
     if (result.canceled || !result.assets[0]) return;
     const asset = result.assets[0];
+
+    // Reject oversized photos before uploading — otherwise the whole file
+    // travels to the server (tens of seconds on mobile data) just to be
+    // rejected by the same check there.
+    if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
+      setAlertInfo({ title: 'Image too large', msg: 'Maximum size is 10 MB. Try a smaller photo or a screenshot.' });
+      return;
+    }
 
     setUploading(true);
     try {

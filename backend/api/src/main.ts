@@ -27,12 +27,12 @@ function validateEnv() {
 async function bootstrap() {
   validateEnv();
 
-  // bodyParser disabled so we can raise the JSON limit: documents and note
-  // images arrive as base64 in JSON, and a 5 MB file is ~6.8 MB encoded —
-  // Express's default 100 KB limit would reject them with 413.
+  // bodyParser disabled so we can raise the JSON limit: documents arrive as
+  // base64 in JSON, and a 10 MB file is ~13.4 MB encoded — Express's default
+  // 100 KB limit would reject them with 413.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use(json({ limit: '8mb' }));
-  app.use(urlencoded({ extended: true, limit: '8mb' }));
+  app.use(json({ limit: '15mb' }));
+  app.use(urlencoded({ extended: true, limit: '15mb' }));
 
   // Helmet — sets ~15 secure HTTP response headers automatically.
   // e.g. X-Content-Type-Options: nosniff, X-Frame-Options: DENY, etc.
