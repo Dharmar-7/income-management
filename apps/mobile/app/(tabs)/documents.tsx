@@ -3,9 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, Modal, Image,
+  ActivityIndicator, RefreshControl, Modal, Image, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { apiFetch } from '@/lib/api';
 import AddDocumentSheet from '@/components/AddDocumentSheet';
 import AppAlert from '@/components/AppAlert';
@@ -26,6 +28,30 @@ interface DocMeta {
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+// Offline cache for opened documents. The query-cache persister deliberately
+// excludes these (a 10 MB file is ~13 MB as base64 — too big for AsyncStorage),
+// so each viewed document's dataUri is written to its own file instead. Any
+// document opened once stays viewable with no network.
+const DOC_CACHE_DIR = `${FileSystem.documentDirectory}doc-cache/`;
+const docCachePath = (id: string) => `${DOC_CACHE_DIR}${id}.txt`;
+
+async function writeDocCache(id: string, dataUri: string) {
+  try {
+    await FileSystem.makeDirectoryAsync(DOC_CACHE_DIR, { intermediates: true }).catch(() => {});
+    await FileSystem.writeAsStringAsync(docCachePath(id), dataUri);
+  } catch { /* cache write is best-effort */ }
+}
+
+async function readDocCache(id: string): Promise<string | null> {
+  try {
+    const info = await FileSystem.getInfoAsync(docCachePath(id));
+    if (!info.exists) return null;
+    return await FileSystem.readAsStringAsync(docCachePath(id));
+  } catch {
+    return null;
+  }
 }
 
 function expiryInfo(iso: string | null) {
@@ -61,11 +87,50 @@ export default function DocumentsScreen() {
   const viewQuery = useQuery({
     queryKey: ['document', viewId],
     enabled: !!viewId,
+    // The binary never changes — don't refetch a multi-MB blob on every open.
+    staleTime: 60 * 60 * 1000,
     queryFn: async () => {
-      const token = await getToken();
-      return apiFetch<DocMeta & { dataUri: string }>(`/documents/${viewId}`, token!);
+      const id = viewId!;
+      try {
+        const token = await getToken();
+        const doc = await apiFetch<DocMeta & { dataUri: string }>(`/documents/${id}`, token!);
+        writeDocCache(id, doc.dataUri); // fire-and-forget
+        return doc;
+      } catch (err) {
+        // Offline (or API down) — fall back to the file cache + list metadata.
+        const dataUri = await readDocCache(id);
+        if (dataUri) {
+          const meta = (listQuery.data ?? []).find(d => d.id === id);
+          if (meta) return { ...meta, dataUri };
+        }
+        throw err;
+      }
     },
   });
+
+  // PDFs (and other non-image files) can't render inline — hand them to the
+  // phone's own viewer instead: write the bytes to a cache file, then fire an
+  // Android VIEW intent with a content:// URI.
+  async function openExternally(doc: DocMeta & { dataUri: string }) {
+    try {
+      const base64 = doc.dataUri.split(',')[1] ?? '';
+      const ext = doc.mimeType === 'application/pdf' ? 'pdf' : (doc.name.split('.').pop() || 'bin');
+      const path = `${FileSystem.cacheDirectory}open-${doc.id}.${ext}`;
+      await FileSystem.writeAsStringAsync(path, base64, { encoding: FileSystem.EncodingType.Base64 });
+      if (Platform.OS !== 'android') throw new Error('unsupported');
+      const contentUri = await FileSystem.getContentUriAsync(path);
+      await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+        data: contentUri,
+        flags: 1, // FLAG_GRANT_READ_URI_PERMISSION
+        type: doc.mimeType,
+      });
+    } catch {
+      setAlertData({
+        title: 'Could not open',
+        message: 'No app on this phone can open this file. Try installing a PDF viewer like Google Drive.',
+      });
+    }
+  }
 
   function deleteDoc(d: DocMeta) {
     setAlertData({
@@ -77,6 +142,7 @@ export default function DocumentsScreen() {
         try {
           const token = await getToken();
           await apiFetch(`/documents/${d.id}`, token!, { method: 'DELETE' });
+          FileSystem.deleteAsync(docCachePath(d.id), { idempotent: true }).catch(() => {});
           queryClient.invalidateQueries({ queryKey: ['documents'] });
         } catch {
           setAlertData({ title: 'Error', message: 'Failed to delete document.' });
@@ -171,7 +237,12 @@ export default function DocumentsScreen() {
             <View style={styles.viewerDoc}>
               <Text style={{ fontSize: 48 }}>📄</Text>
               <Text style={styles.viewerDocName}>{viewQuery.data.name}</Text>
-              <Text style={styles.viewerDocHint}>Preview not supported for this file type.</Text>
+              <TouchableOpacity style={styles.viewerOpenBtn} onPress={() => openExternally(viewQuery.data!)}>
+                <Text style={styles.viewerOpenText}>
+                  {viewQuery.data.mimeType === 'application/pdf' ? 'Open PDF' : 'Open file'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.viewerDocHint}>Opens in your phone’s viewer app.</Text>
             </View>
           )}
           {viewQuery.data?.name ? <Text style={styles.viewerName}>{viewQuery.data.name}</Text> : null}
@@ -228,5 +299,10 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   viewerDoc: { alignItems: 'center', gap: 8 },
   viewerDocName: { color: '#fff', fontSize: 16, fontWeight: '700' },
   viewerDocHint: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
+  viewerOpenBtn: {
+    marginTop: 8, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24,
+    backgroundColor: c.primary,
+  },
+  viewerOpenText: { color: c.onColor, fontSize: 14, fontWeight: '700' },
   viewerName: { position: 'absolute', bottom: 40, color: '#fff', fontSize: 14, fontWeight: '600' },
 });

@@ -1,7 +1,10 @@
 import * as Sentry from '@sentry/react-native';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { tokenCache } from '@/lib/tokenCache';
-import { QueryClient, QueryClientProvider, keepPreviousData } from '@tanstack/react-query';
+import { QueryClient, keepPreviousData } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
@@ -23,7 +26,9 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60_000,
-      gcTime: 30 * 60_000,          // keep cached data 30 min so tab switches are instant
+      // 24h so data survives app restarts via the persisted cache below —
+      // the app opens straight to last-known data even with no network.
+      gcTime: 24 * 60 * 60_000,
       refetchOnWindowFocus: false,
       retry: 1,
       // Show the previously loaded data instantly while refetching in the
@@ -32,6 +37,21 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Persist the query cache to device storage: on launch the last-known data
+// hydrates instantly (offline tolerance), then fresh data replaces it when the
+// network responds. Individual documents are excluded — their base64 payloads
+// (up to ~7 MB each) would blow AsyncStorage's size limits; viewed documents
+// get their own file-based cache in the documents screen instead.
+const persister = createAsyncStoragePersister({ storage: AsyncStorage, throttleTime: 2_000 });
+const persistOptions = {
+  persister,
+  maxAge: 24 * 60 * 60_000,
+  dehydrateOptions: {
+    shouldDehydrateQuery: (q: { state: { status: string }; queryKey: readonly unknown[] }) =>
+      q.state.status === 'success' && q.queryKey[0] !== 'document',
+  },
+};
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
@@ -86,11 +106,11 @@ function RootLayout() {
           publishableKey={publishableKey}
           tokenCache={Platform.OS === 'web' ? undefined : tokenCache}
         >
-          <QueryClientProvider client={queryClient}>
+          <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
             <ThemedStatusBar />
             <AuthGuard />
             <Slot />
-          </QueryClientProvider>
+          </PersistQueryClientProvider>
         </ClerkProvider>
       </ThemeProvider>
     </SafeAreaProvider>
