@@ -20,9 +20,12 @@ export class ReportsService {
 
     const start = new Date(y, m - 1, 1);
     const end = new Date(y, m, 0, 23, 59, 59);
+    // Previous month window — for the month-over-month category deltas.
+    const prevStart = new Date(y, m - 2, 1);
+    const prevEnd = new Date(y, m - 1, 0, 23, 59, 59);
 
     // Run all queries in parallel for speed
-    const [income, expenses, txCount, categoryGroups, merchantGroups] = await Promise.all([
+    const [income, expenses, txCount, categoryGroups, merchantGroups, curCatAll, prevCatAll] = await Promise.all([
       // Total income
       this.prisma.transaction.aggregate({
         where: { userId, type: TransactionType.CREDIT, date: { gte: start, lte: end } },
@@ -60,14 +63,53 @@ export class ReportsService {
         orderBy: { _sum: { amount: 'desc' } },
         take: 5,
       }),
+      // Full per-category spend, this month + previous month (for deltas —
+      // the top-5 list above can't compute changes for categories outside it)
+      this.prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: { userId, type: TransactionType.DEBIT, date: { gte: start, lte: end }, categoryId: { not: null } },
+        _sum: { amount: true },
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: { userId, type: TransactionType.DEBIT, date: { gte: prevStart, lte: prevEnd }, categoryId: { not: null } },
+        _sum: { amount: true },
+      }),
     ]);
 
-    // Enrich category groups with category details
-    const categoryIds = categoryGroups.map(g => g.categoryId!).filter(Boolean);
+    // Enrich category groups with category details (top-5 + every delta id)
+    const categoryIds = [
+      ...new Set([
+        ...categoryGroups.map(g => g.categoryId!),
+        ...curCatAll.map(g => g.categoryId!),
+        ...prevCatAll.map(g => g.categoryId!),
+      ]),
+    ].filter(Boolean);
     const categories = await this.prisma.category.findMany({
       where: { id: { in: categoryIds } },
     });
     const categoryMap = new Map(categories.map(c => [c.id, c]));
+
+    // Month-over-month movers: join current & previous by category, keep the
+    // biggest absolute changes. changePercent is null for brand-new spending.
+    const prevByCat = new Map(prevCatAll.map(g => [g.categoryId, g._sum.amount ?? 0]));
+    const curByCat = new Map(curCatAll.map(g => [g.categoryId, g._sum.amount ?? 0]));
+    const allCatIds = new Set([...prevByCat.keys(), ...curByCat.keys()]);
+    const categoryDeltas = [...allCatIds]
+      .map(id => {
+        const current = curByCat.get(id) ?? 0;
+        const previous = prevByCat.get(id) ?? 0;
+        return {
+          category: categoryMap.get(id!) ?? { name: 'Other', icon: '📦' },
+          current,
+          previous,
+          changeAmount: current - previous,
+          changePercent: previous > 0 ? Math.round(((current - previous) / previous) * 100) : null,
+        };
+      })
+      .filter(d => Math.abs(d.changeAmount) >= 1)
+      .sort((a, b) => Math.abs(b.changeAmount) - Math.abs(a.changeAmount))
+      .slice(0, 5);
 
     const totalIncome = income._sum.amount ?? 0;
     const totalExpenses = expenses._sum.amount ?? 0;
@@ -91,6 +133,7 @@ export class ReportsService {
         total: g._sum.amount ?? 0,
         count: g._count,
       })),
+      categoryDeltas,
     };
   }
 
@@ -121,7 +164,14 @@ export class ReportsService {
       const m = i + 1;
       const inc = Number(rows.find(r => r.mo === m && r.type === 'CREDIT')?.total ?? 0);
       const exp = Number(rows.find(r => r.mo === m && r.type === 'DEBIT')?.total ?? 0);
-      return { month: m, income: inc, expenses: exp, savings: inc - exp };
+      return {
+        month: m,
+        income: inc,
+        expenses: exp,
+        savings: inc - exp,
+        // % of income kept that month — the savings-rate trend line.
+        savingsRate: inc > 0 ? Math.round(((inc - exp) / inc) * 100) : null,
+      };
     });
 
     const totals = months.reduce(

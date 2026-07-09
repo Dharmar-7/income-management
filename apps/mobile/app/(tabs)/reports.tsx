@@ -19,11 +19,18 @@ interface MonthlyReport {
   };
   topCategories: { category: { name: string; icon: string }; total: number; count: number }[];
   topMerchants: { merchant: string; total: number; count: number }[];
+  categoryDeltas: {
+    category: { name: string; icon: string };
+    current: number;
+    previous: number;
+    changeAmount: number;
+    changePercent: number | null; // null = no spending last month (new)
+  }[];
 }
 
 interface AnnualReport {
   year: number;
-  months: { month: number; income: number; expenses: number; savings: number }[];
+  months: { month: number; income: number; expenses: number; savings: number; savingsRate: number | null }[];
   totals: { income: number; expenses: number; savings: number };
 }
 
@@ -200,6 +207,40 @@ export default function ReportsScreen() {
             ))}
           </View>
 
+          {/* What changed vs last month */}
+          {(r.categoryDeltas?.length ?? 0) > 0 && (
+            <View style={{
+              backgroundColor: c.card, borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: c.cardBorder, marginBottom: 16,
+            }}>
+              <Text style={{ fontWeight: '700', color: c.text, fontSize: 15, marginBottom: 4 }}>
+                What Changed vs Last Month
+              </Text>
+              {r.categoryDeltas.map((d, i) => {
+                const up = d.changeAmount > 0; // spending increases are the red ones
+                return (
+                  <View key={i} style={{
+                    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                    paddingVertical: 11,
+                    borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.cardBorder,
+                  }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '600', color: c.text, fontSize: 13 }}>
+                        {d.category.icon} {d.category.name}
+                      </Text>
+                      <Text style={{ color: c.textFaint, fontSize: 11, marginTop: 1 }}>
+                        {formatINR(d.previous)} → {formatINR(d.current)}
+                      </Text>
+                    </View>
+                    <Text style={{ fontWeight: '800', fontSize: 13, color: up ? c.danger : c.success }}>
+                      {up ? '▲' : '▼'} {d.changePercent === null ? 'new' : `${Math.abs(d.changePercent)}%`}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
           {/* Top merchants */}
           <View style={{
             backgroundColor: c.card, borderRadius: 16, padding: 16,
@@ -289,6 +330,42 @@ export default function ReportsScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.danger }} />
               <Text style={{ fontSize: 11, color: c.textMuted }}>Expenses</Text>
+            </View>
+          </View>
+
+          {/* Savings-rate trend — % of income kept, month by month */}
+          <View style={{ borderTopWidth: 1, borderTopColor: c.cardBorder, paddingTop: 12, marginBottom: 14 }}>
+            <Text style={{ fontSize: 11, color: c.textFaint, marginBottom: 8 }}>
+              Savings rate (% of income kept)
+              {(() => {
+                const cur = a.months[month - 1]?.savingsRate;
+                return cur !== null && cur !== undefined ? ` — ${cur}% in ${FULL_MONTHS[month - 1].slice(0, 3)}` : '';
+              })()}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', height: 40, gap: 3 }}>
+              {a.months.map(m => {
+                const rate = m.savingsRate;
+                const h = rate === null ? 2 : Math.max((Math.min(Math.max(rate, 0), 100) / 100) * 40, 2);
+                return (
+                  <View key={m.month} style={{ flex: 1, alignItems: 'center' }}>
+                    <View style={{
+                      width: '70%', height: h, borderRadius: 2,
+                      backgroundColor: rate === null ? c.track : rate < 0 ? c.danger : c.primary,
+                      opacity: m.month === month ? 1 : 0.55,
+                    }} />
+                  </View>
+                );
+              })}
+            </View>
+            <View style={{ flexDirection: 'row', gap: 3, marginTop: 4 }}>
+              {a.months.map(m => (
+                <Text key={m.month} style={{
+                  flex: 1, textAlign: 'center', fontSize: 8,
+                  color: m.month === month ? c.text : c.textFaint,
+                }}>
+                  {m.savingsRate === null ? '·' : `${m.savingsRate}`}
+                </Text>
+              ))}
             </View>
           </View>
 

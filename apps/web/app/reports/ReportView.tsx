@@ -19,11 +19,18 @@ interface MonthlyReport {
   };
   topCategories: { category: { name: string; icon: string }; total: number; count: number }[];
   topMerchants: { merchant: string; total: number; count: number }[];
+  categoryDeltas: {
+    category: { name: string; icon: string };
+    current: number;
+    previous: number;
+    changeAmount: number;
+    changePercent: number | null; // null = no spending last month (new)
+  }[];
 }
 
 interface AnnualReport {
   year: number;
-  months: { month: number; income: number; expenses: number; savings: number }[];
+  months: { month: number; income: number; expenses: number; savings: number; savingsRate: number | null }[];
   totals: { income: number; expenses: number; savings: number };
 }
 
@@ -223,6 +230,33 @@ export default function ReportView() {
               </div>
             )}
           </div>
+
+          {/* What changed vs last month */}
+          {(r.categoryDeltas?.length ?? 0) > 0 && (
+            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-6 md:col-span-2">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-4">What Changed vs Last Month</h3>
+              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                {r.categoryDeltas.map((d, i) => {
+                  const up = d.changeAmount > 0; // rising spend = red
+                  return (
+                    <div key={i} className="flex items-center justify-between py-2.5">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white">
+                          {d.category.icon} {d.category.name}
+                        </p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {formatINR(d.previous)} → {formatINR(d.current)}
+                        </p>
+                      </div>
+                      <span className={`text-sm font-bold ${up ? 'text-rose-500' : 'text-emerald-500'}`}>
+                        {up ? '▲' : '▼'} {d.changePercent === null ? 'new' : `${Math.abs(d.changePercent)}%`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -263,6 +297,33 @@ export default function ReportView() {
                   {MONTH_NAMES[m.month]}
                 </div>
               ))}
+            </div>
+
+            {/* Savings-rate trend — % of income kept per month */}
+            <div className="mb-4">
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">Savings rate (% of income kept)</p>
+              <div className="flex items-end gap-1.5 h-10">
+                {a.months.map(m => {
+                  const rate = m.savingsRate;
+                  const h = rate === null ? 4 : Math.max((Math.min(Math.max(rate, 0), 100) / 100) * 40, 4);
+                  return (
+                    <div key={m.month} className="flex-1 flex justify-center">
+                      <div
+                        className={`w-2/5 rounded-t ${rate === null ? 'bg-gray-100 dark:bg-gray-700' : rate < 0 ? 'bg-rose-400' : 'bg-indigo-500'} ${m.month === month ? '' : 'opacity-50'}`}
+                        style={{ height: `${h}px` }}
+                        title={rate === null ? 'No income' : `${rate}%`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex gap-1.5 mt-1">
+                {a.months.map(m => (
+                  <div key={m.month} className={`flex-1 text-center text-[10px] ${m.month === month ? 'font-bold text-gray-700 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {m.savingsRate === null ? '·' : `${m.savingsRate}%`}
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Legend */}
