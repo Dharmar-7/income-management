@@ -103,7 +103,8 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
 
           {/* Crystal gem — centre tab */}
           <TouchableOpacity style={s.ti} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
-            <View style={[s.ic, gemActive && (dark ? s.icActiveDark : s.icActiveLight), open && s.icOpen]}>
+            {(gemActive || open) && <View style={s.arc} />}
+            <View style={s.ic}>
               <VeloraGem size={20} />
             </View>
             <View style={[s.dot, (gemActive || open) && s.dotActive]} />
@@ -125,7 +126,8 @@ function TabItem({
 }: { icon: string; label: string; active: boolean; dark: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity style={s.ti} onPress={onPress} activeOpacity={0.7}>
-      <View style={[s.ic, active && (dark ? s.icActiveDark : s.icActiveLight)]}>
+      {active && <View style={s.arc} />}
+      <View style={s.ic}>
         <Text style={s.emoji}>{icon}</Text>
       </View>
       <View style={[s.dot, active && s.dotActive]} />
@@ -135,10 +137,6 @@ function TabItem({
     </TouchableOpacity>
   );
 }
-
-const INDIGO_BG_D = 'rgba(99,102,241,0.24)';
-const INDIGO_BG_L = 'rgba(99,102,241,0.16)';
-const INDIGO_OPEN = 'rgba(99,102,241,0.30)';
 
 const s = StyleSheet.create({
   wrap: {
@@ -166,16 +164,32 @@ const s = StyleSheet.create({
     minWidth: 54,
   },
   ic: {
-    // Horizontal stadium pill (borderRadius === height / 2) so the active state
-    // reads as a clearly-curved highlight rather than a boxy chip.
+    // Fixed icon box keeps the touch target/layout identical across states —
+    // the active marker is the floating arc above, not a filled background.
     width: 50, height: 32,
-    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icActiveDark:  { backgroundColor: INDIGO_BG_D },
-  icActiveLight: { backgroundColor: INDIGO_BG_L },
-  icOpen:        { backgroundColor: INDIGO_OPEN  },
+  // The active-tab marker: a thin indigo arc floating above the icon. A View
+  // with only its top border drawn + big top corner radii renders as a curved
+  // line — no SVG dependency needed. Absolutely positioned so toggling it
+  // never shifts the bar's layout.
+  arc: {
+    position: 'absolute',
+    top: -2,
+    alignSelf: 'center',
+    width: 30,
+    height: 10,
+    borderTopWidth: 3,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    borderTopColor: '#6366f1',
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   emoji: { fontSize: 18 },
   dot: {
     width: 4, height: 4,

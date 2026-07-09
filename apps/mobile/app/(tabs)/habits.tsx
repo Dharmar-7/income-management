@@ -350,16 +350,22 @@ export default function HabitsScreen() {
                   })}
                 </View>
 
-                {/* ── Per-habit stats ─────────────────────────────────────── */}
+                {/* ── Per-habit stats (tap a card to edit that habit) ──────── */}
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Streaks & Progress</Text>
+                  <Text style={styles.sectionHint}>tap a habit to edit</Text>
                 </View>
 
                 {habits.map(h => {
                   const col = habitColor(h.color);
                   const targetPct = Math.min(100, (h.weeklyDone / h.weeklyTarget) * 100);
                   return (
-                    <View key={h.id} style={styles.statCard}>
+                    <TouchableOpacity
+                      key={h.id}
+                      style={styles.statCard}
+                      activeOpacity={0.7}
+                      onPress={() => { setEditing(h); setSheetOpen(true); }}
+                    >
                       <View style={styles.statHeader}>
                         <View style={[styles.statIconBox, { backgroundColor: col.soft }]}>
                           <Text style={styles.statIcon}>{h.icon}</Text>
@@ -374,11 +380,12 @@ export default function HabitsScreen() {
                           <Text style={styles.streakNum}>🔥 {h.currentStreak}</Text>
                           <Text style={styles.streakBest}>best {h.longestStreak}</Text>
                         </View>
+                        <Text style={styles.editHint}>✎</Text>
                       </View>
                       <View style={styles.statTrack}>
                         <View style={[styles.statFill, { width: `${targetPct}%`, backgroundColor: col.base }]} />
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </>
@@ -425,6 +432,8 @@ const makeStyles = (c: Theme) => StyleSheet.create({
 
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: c.text },
+  sectionHint: { fontSize: 11, color: c.textFaint },
+  editHint: { fontSize: 14, color: c.textFaint, marginLeft: 8 },
   weekNav: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   weekNavBtn: {
     width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
