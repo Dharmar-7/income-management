@@ -66,10 +66,12 @@ export class HabitsService {
     return this.prisma.resolveUserId(clerkId);
   }
 
-  // GET /habits — board data: each habit with this week's ticks, week %, and streaks.
-  async getBoard(clerkId: string, todayIso: string) {
+  // GET /habits — board data: each habit with the anchor week's ticks, week %,
+  // and streaks. `anchorIso` picks the displayed week (defaults to the current
+  // one); daily score + streaks always follow the real `todayIso`.
+  async getBoard(clerkId: string, todayIso: string, anchorIso: string = todayIso) {
     const userId = await this.resolveUserId(clerkId);
-    const days = weekDays(todayIso);
+    const days = weekDays(anchorIso);
     const todayDow = new Date(todayIso + 'T00:00:00Z').getUTCDay();
 
     const habits = await this.prisma.habit.findMany({

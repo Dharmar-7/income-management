@@ -62,9 +62,11 @@ export default function EventsTicker() {
     <View style={styles.bar}>
       <View style={styles.clip}>
         <Animated.View style={{ flexDirection: 'row', transform: [{ translateX: tx }] }}>
-          {/* Two copies side-by-side → seamless loop (we translate by one copy's width). */}
-          <Text style={styles.text} onLayout={e => setW(e.nativeEvent.layout.width)}>{text}        •        </Text>
-          <Text style={styles.text}>{text}        •        </Text>
+          {/* Two copies side-by-side → seamless loop (we translate by one copy's width).
+              numberOfLines + flexShrink:0 force a single line at full intrinsic width —
+              otherwise long content wraps inside the clip and breaks the alignment. */}
+          <Text style={styles.text} numberOfLines={1} onLayout={e => setW(e.nativeEvent.layout.width)}>{text}        •        </Text>
+          <Text style={styles.text} numberOfLines={1}>{text}        •        </Text>
         </Animated.View>
       </View>
     </View>
@@ -80,6 +82,6 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     paddingVertical: 8,
     overflow: 'hidden',
   },
-  clip: { overflow: 'hidden' },
-  text: { fontSize: 13, fontWeight: '600', color: c.text },
+  clip: { overflow: 'hidden', flexDirection: 'row' },
+  text: { fontSize: 13, fontWeight: '600', color: c.text, flexShrink: 0 },
 });

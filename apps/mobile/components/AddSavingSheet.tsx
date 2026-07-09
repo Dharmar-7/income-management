@@ -356,12 +356,15 @@ function AddSavingForm({ platforms, editing, onClose, onSuccess }: { platforms: 
 
       <View style={styles.field}>
         <Text style={styles.label}>
-          Monthly SIP (₹) <Text style={{ color: c.textFaint }}>(optional)</Text>
+          {savingType === 'MUTUAL_FUNDS' ? 'Monthly SIP (₹)'
+            : savingType === 'RECURRING_DEPOSIT' ? 'Monthly Deposit (₹)'
+            : 'Monthly Contribution (₹)'}{' '}
+          <Text style={{ color: c.textFaint }}>(optional)</Text>
         </Text>
         <TextInput
           value={sipAmount}
           onChangeText={setSipAmount}
-          placeholder="e.g. 100 — shows a + button to add each month"
+          placeholder="e.g. 1000 — shows a + button to add each month"
           placeholderTextColor={c.textFaint}
           keyboardType="decimal-pad"
           style={styles.input}

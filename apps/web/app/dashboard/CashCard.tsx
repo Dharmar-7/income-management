@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
+import { useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useDashboard, useInvalidateDashboard } from '@/lib/useDashboard';
 
@@ -32,6 +33,7 @@ export default function CashCard() {
   const { getToken } = useAuth();
   const { data, isLoading } = useDashboard();
   const invalidate = useInvalidateDashboard();
+  const queryClient = useQueryClient();
   const cashData = data?.cash;
 
   const [mode, setMode] = useState<Mode>('idle');
@@ -74,6 +76,7 @@ export default function CashCard() {
         }),
       });
       invalidate();
+      queryClient.invalidateQueries({ queryKey: ['transactions'] }); // cash payments mirror into transactions
       setMode('idle');
     } catch (err: any) {
       setError(err.message ?? 'Something went wrong.');

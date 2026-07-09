@@ -10,7 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
 import AddEventSheet, { type EditingEvent } from '@/components/AddEventSheet';
 import AppAlert from '@/components/AppAlert';
-import { rescheduleAllEvents } from '@/lib/eventNotifications';
+import { rescheduleAllEvents, cancelEventNotification } from '@/lib/eventNotifications';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -28,6 +28,16 @@ interface Occasion {
 const KIND_LABEL: Record<Kind, string> = {
   bill: 'Bill', income: 'Income', emi: 'EMI', goal: 'Goal', reminder: 'Reminder', event: 'Occasion',
 };
+
+// Grouping metadata for the occasions catalog (collapsible sections).
+const TYPE_META: Record<EventType, { label: string; icon: string }> = {
+  BIRTHDAY:    { label: 'Birthdays',     icon: '🎂' },
+  ANNIVERSARY: { label: 'Anniversaries', icon: '💍' },
+  FESTIVAL:    { label: 'Festivals',     icon: '🎊' },
+  MEMORIAL:    { label: 'Memorials',     icon: '🕯️' },
+  CUSTOM:      { label: 'Others',        icon: '🗓️' },
+};
+const TYPE_ORDER: EventType[] = ['BIRTHDAY', 'ANNIVERSARY', 'FESTIVAL', 'MEMORIAL', 'CUSTOM'];
 
 function formatINR(n: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
@@ -58,6 +68,8 @@ export default function CalendarScreen() {
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Occasion | null>(null);
+  // Which type sections of the occasions catalog are expanded.
+  const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
   const [alertData, setAlertData] = useState<{
     title: string; message: string; confirmLabel?: string; confirmDestructive?: boolean; onConfirm?: () => void;
   } | null>(null);
@@ -111,6 +123,7 @@ export default function CalendarScreen() {
         try {
           const token = await getToken();
           await apiFetch(`/events/${o.id}`, token!, { method: 'DELETE' });
+          await cancelEventNotification(o.id); // don't let a deleted occasion still ring
           invalidate();
         } catch {
           setAlertData({ title: 'Error', message: 'Failed to delete occasion.' });
@@ -130,7 +143,15 @@ export default function CalendarScreen() {
     return out;
   }, [calQuery.data]);
 
-  const occasions = eventsQuery.data ?? [];
+  const occasions = eventsQuery.data ?? []; // API returns soonest-first
+  // Occasions grouped by type, in a fixed order, empty types dropped.
+  const typeGroups = useMemo(
+    () =>
+      TYPE_ORDER
+        .map(t => ({ type: t, items: occasions.filter(o => o.type === t) }))
+        .filter(g => g.items.length > 0),
+    [occasions],
+  );
   const kindColor = (k: Kind) =>
     k === 'income' ? c.success : k === 'bill' ? c.danger : k === 'emi' ? c.primaryDeep
       : k === 'goal' ? c.primary : k === 'event' ? c.violet : c.warning;
@@ -166,29 +187,64 @@ export default function CalendarScreen() {
             </TouchableOpacity>
           </View>
 
-          {occasions.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🎉 Occasions</Text>
-              <View style={styles.card}>
-                {occasions.map((o, i) => (
-                  <TouchableOpacity key={o.id} style={[styles.row, i > 0 && styles.rowBorder]} activeOpacity={0.7} onPress={() => openEdit(o)}>
-                    <Text style={styles.rowIcon}>{o.icon}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>{o.title}</Text>
-                      <Text style={styles.rowSub}>
-                        {untilLabel(o.daysUntil)}
-                        {o.type === 'BIRTHDAY' && o.turning > 0 ? `  ·  turning ${o.turning}` : ''}
-                        {o.isSelf ? '  ·  you' : o.personName ? `  ·  ${o.personName}` : ''}
-                      </Text>
+          {occasions.length > 0 && (() => {
+            const renderOccasion = (o: Occasion, i: number) => (
+              <TouchableOpacity key={o.id} style={[styles.row, i > 0 && styles.rowBorder]} activeOpacity={0.7} onPress={() => openEdit(o)}>
+                <Text style={styles.rowIcon}>{o.icon}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{o.title}</Text>
+                  <Text style={styles.rowSub}>
+                    {untilLabel(o.daysUntil)}
+                    {o.type === 'BIRTHDAY' && o.turning > 0 ? `  ·  turning ${o.turning}` : ''}
+                    {o.isSelf ? '  ·  you' : o.personName ? `  ·  ${o.personName}` : ''}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => deleteEvent(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.deleteIcon}>🗑️</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+
+            // Few occasions → simple flat list, no grouping overhead.
+            if (occasions.length <= 4) {
+              return (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>🎉 Occasions</Text>
+                  <View style={styles.card}>{occasions.map(renderOccasion)}</View>
+                </View>
+              );
+            }
+
+            // Many occasions → pin the 3 nearest, collapse the rest by type.
+            return (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>🎉 Up next</Text>
+                <View style={styles.card}>{occasions.slice(0, 3).map(renderOccasion)}</View>
+
+                <Text style={[styles.sectionTitle, { marginTop: 14 }]}>All occasions ({occasions.length})</Text>
+                {typeGroups.map(g => {
+                  const open = !!openTypes[g.type];
+                  const meta = TYPE_META[g.type];
+                  return (
+                    <View key={g.type} style={{ marginBottom: 8 }}>
+                      <TouchableOpacity
+                        style={styles.typeHeader}
+                        activeOpacity={0.7}
+                        onPress={() => setOpenTypes(p => ({ ...p, [g.type]: !open }))}
+                      >
+                        <Text style={styles.typeHeaderText}>{meta.icon} {meta.label}</Text>
+                        <View style={styles.typeHeaderRight}>
+                          <View style={styles.typeCountBadge}><Text style={styles.typeCountText}>{g.items.length}</Text></View>
+                          <Text style={styles.typeChevron}>{open ? '▾' : '▸'}</Text>
+                        </View>
+                      </TouchableOpacity>
+                      {open && <View style={[styles.card, { marginTop: 6 }]}>{g.items.map(renderOccasion)}</View>}
                     </View>
-                    <TouchableOpacity onPress={() => deleteEvent(o)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={styles.deleteIcon}>🗑️</Text>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                ))}
+                  );
+                })}
               </View>
-            </View>
-          )}
+            );
+          })()}
 
           {/* Upcoming agenda */}
           <Text style={[styles.sectionTitle, { marginTop: 8 }]}>Upcoming (60 days)</Text>
@@ -249,6 +305,22 @@ const makeStyles = (c: Theme) => StyleSheet.create({
 
   section: { marginBottom: 8 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: c.textMuted, marginBottom: 6, marginLeft: 4 },
+
+  // collapsible type sections of the occasions catalog
+  typeHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: c.chipBg, borderRadius: 12, borderWidth: 1, borderColor: c.chipBorder,
+    paddingHorizontal: 14, paddingVertical: 11,
+  },
+  typeHeaderText: { fontSize: 13, fontWeight: '700', color: c.text },
+  typeHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  typeCountBadge: {
+    minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6,
+    backgroundColor: c.card, borderWidth: 1, borderColor: c.cardBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  typeCountText: { fontSize: 11, fontWeight: '700', color: c.textMuted },
+  typeChevron: { fontSize: 13, color: c.textFaint, fontWeight: '700' },
 
   group: { marginBottom: 14 },
   dayLabel: { fontSize: 13, fontWeight: '700', color: c.textMuted, marginBottom: 6, marginLeft: 4 },

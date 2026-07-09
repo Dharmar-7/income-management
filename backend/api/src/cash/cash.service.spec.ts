@@ -19,6 +19,10 @@ function makeMockPrisma() {
       findUnique: jest.fn(),
       delete: jest.fn(),
     },
+    // spendCash mirrors "SPENT" entries as DEBIT transactions
+    transaction: {
+      create: jest.fn().mockResolvedValue({ id: 'mirror-tx' }),
+    },
   };
   // Mirror PrismaService.resolveUserId so existing user.findUnique mocks still drive behaviour
   prisma.resolveUserId = jest.fn(async (clerkId: string) => {

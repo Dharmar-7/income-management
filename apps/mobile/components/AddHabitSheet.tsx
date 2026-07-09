@@ -34,12 +34,13 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   editing?: EditingHabit | null;
+  onDelete?: () => void; // shown only when editing — parent confirms + deletes
 }
 
 const ICON_CHOICES = ['✅', '💪', '📖', '🤖', '🗣️', '📈', '🎬', '😴', '🧘', '💧', '🏃', '🎯', '🎨', '🎸'];
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // index 0=Sun … 6=Sat
 
-export default function AddHabitSheet({ visible, onClose, onSuccess, editing }: Props) {
+export default function AddHabitSheet({ visible, onClose, onSuccess, editing, onDelete }: Props) {
   const { getToken } = useAuth();
   const { theme: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
@@ -233,6 +234,12 @@ export default function AddHabitSheet({ visible, onClose, onSuccess, editing }: 
                   : <Text style={styles.submitText}>{isEdit ? 'Save Changes' : 'Create Habit'}</Text>
                 }
               </TouchableOpacity>
+
+              {isEdit && onDelete && (
+                <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} disabled={loading}>
+                  <Text style={styles.deleteText}>🗑️ Delete Habit</Text>
+                </TouchableOpacity>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -310,4 +317,10 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     paddingVertical: 16, alignItems: 'center', marginTop: 8,
   },
   submitText: { color: c.onColor, fontSize: 16, fontWeight: '700' },
+
+  deleteBtn: {
+    borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 10,
+    borderWidth: 1, borderColor: c.danger,
+  },
+  deleteText: { color: c.danger, fontSize: 14, fontWeight: '700' },
 });

@@ -227,8 +227,10 @@ export default function SavingsScreen() {
 
   function contributeSip(s: Saving) {
     if (!s.sipAmount) return;
+    // The monthly top-up isn't SIP-only — RDs and other instruments use it too.
+    const word = s.type === 'MUTUAL_FUNDS' ? 'SIP' : s.type === 'RECURRING_DEPOSIT' ? 'deposit' : 'contribution';
     setAlertData({
-      title: 'Add this month’s SIP',
+      title: `Add this month’s ${word}`,
       message: `Add ${formatINR(s.sipAmount)} to "${s.name}"? This bumps both the invested amount and current value.`,
       confirmLabel: 'Add',
       onConfirm: async () => {
@@ -237,11 +239,11 @@ export default function SavingsScreen() {
           await apiFetch(`/savings/${s.id}/contribute`, token!, { method: 'POST', body: JSON.stringify({}) });
           invalidate();
           setAlertData({
-            title: 'SIP added ✅',
+            title: `Added ✅`,
             message: `Added ${formatINR(s.sipAmount!)} to "${s.name}".`,
           });
         } catch (err: any) {
-          setAlertData({ title: 'Could not add SIP', message: err?.message ?? 'Please try again.' });
+          setAlertData({ title: `Could not add ${word}`, message: err?.message ?? 'Please try again.' });
         }
       },
     });

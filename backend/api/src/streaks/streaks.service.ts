@@ -37,14 +37,17 @@ export function computeStreaks(daySet: Set<string>, todayIso: string): { current
   return { current, longest };
 }
 
-// Distinct UTC days (YYYY-MM-DD) with any logged activity. Computed in the DB —
-// previously we fetched every Transaction/CashTransaction row's createdAt over a
-// cross-region link just to dedupe them into days.
+// Distinct days (YYYY-MM-DD) with any logged activity — transactions, cash
+// entries, or habit check-ins (HabitCheckin.userId is denormalised exactly for
+// this scan). Computed in the DB — previously we fetched every row's createdAt
+// over a cross-region link just to dedupe them into days.
 export async function fetchActiveDays(prisma: PrismaService, userId: string): Promise<Set<string>> {
   const rows = await prisma.$queryRaw<{ day: string }[]>`
     SELECT DISTINCT DATE("createdAt")::text AS day FROM "Transaction" WHERE "userId" = ${userId}
     UNION
     SELECT DISTINCT DATE("createdAt")::text AS day FROM "CashTransaction" WHERE "userId" = ${userId}
+    UNION
+    SELECT DISTINCT day FROM "HabitCheckin" WHERE "userId" = ${userId}
   `;
   return new Set(rows.map(r => r.day));
 }

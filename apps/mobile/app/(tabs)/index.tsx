@@ -134,7 +134,10 @@ export default function DashboardScreen() {
           mode={cashMode}
           currentBalance={cashBalance}
           onClose={() => setCashMode(null)}
-          onSuccess={() => queryClient.invalidateQueries({ queryKey: ['dashboard'] })}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+            queryClient.invalidateQueries({ queryKey: ['transactions'] }); // cash payments mirror into transactions
+          }}
         />
       )}
       <ScrollView

@@ -11,14 +11,19 @@ import { CheckinHabitDto } from './dto/checkin-habit.dto';
 export class HabitsController {
   constructor(private service: HabitsService) {}
 
-  // GET /habits?today=YYYY-MM-DD — weekly board, daily score, streaks.
+  // GET /habits?today=YYYY-MM-DD&anchor=YYYY-MM-DD — weekly board, daily score, streaks.
   // `today` is the client's local day so the board lines up with the user's timezone.
+  // `anchor` (optional) selects which week to return — any day inside the wanted
+  // week. Daily score and streaks always follow the real `today`.
   @Get()
-  getBoard(@CurrentUser() userId: string, @Query('today') today?: string) {
-    const iso = today && /^\d{4}-\d{2}-\d{2}$/.test(today)
-      ? today
-      : new Date().toISOString().slice(0, 10);
-    return this.service.getBoard(userId, iso);
+  getBoard(
+    @CurrentUser() userId: string,
+    @Query('today') today?: string,
+    @Query('anchor') anchor?: string,
+  ) {
+    const valid = (s?: string) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);
+    const iso = valid(today) ?? new Date().toISOString().slice(0, 10);
+    return this.service.getBoard(userId, iso, valid(anchor) ?? iso);
   }
 
   @Post()

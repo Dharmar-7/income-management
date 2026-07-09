@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import {
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   RefreshControl,
   ActivityIndicator,
+  PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
@@ -58,6 +59,25 @@ function localToday(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+// Shift an ISO day (YYYY-MM-DD) by n days.
+function isoAddDays(iso: string, n: number): string {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// Label for the visible week: named for near weeks, date range further away.
+function weekLabel(offset: number, days?: string[]): string {
+  if (offset === 0) return 'This Week';
+  if (offset === -1) return 'Last Week';
+  if (offset === 1) return 'Next Week';
+  if (!days || days.length < 7) return '…';
+  const f = (iso: string) =>
+    new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  return `${f(days[0])} – ${f(days[6])}`;
+}
+
 // Tap cycle: empty → ✅ → 🟡 → empty.
 function nextStatus(cur: CheckStatus): CheckStatus {
   if (cur === null) return 'DONE';
@@ -85,34 +105,52 @@ export default function HabitsScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<HabitRow | null>(null);
   const [seeding, setSeeding] = useState(false);
+  // 0 = current week, -1 = last week, +1 = next week…
+  const [weekOffset, setWeekOffset] = useState(0);
   const [alertData, setAlertData] = useState<{
     title: string; message: string;
     confirmLabel?: string; confirmDestructive?: boolean;
     onConfirm?: () => void;
   } | null>(null);
 
+  const anchor = useMemo(() => isoAddDays(today, weekOffset * 7), [today, weekOffset]);
+
   const boardQuery = useQuery({
-    queryKey: ['habits', today],
+    queryKey: ['habits', today, anchor],
     queryFn: async () => {
       const token = await getToken();
-      return apiFetch<Board>(`/habits?today=${today}`, token!);
+      return apiFetch<Board>(`/habits?today=${today}&anchor=${anchor}`, token!);
     },
     // Ticks update the cache optimistically, so a short staleTime only causes
     // redundant refetches — 2 min matches the rest of the app.
     staleTime: 2 * 60 * 1000,
   });
 
+  // Swipe left/right on the board to move between weeks. Claims the gesture
+  // only for clearly-horizontal drags so cell taps and vertical scroll keep working.
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 24 && Math.abs(g.dx) > Math.abs(g.dy) * 2,
+      onPanResponderRelease: (_, g) => {
+        if (g.dx <= -48) setWeekOffset(o => o + 1);      // swipe left → next week
+        else if (g.dx >= 48) setWeekOffset(o => o - 1);  // swipe right → last week
+      },
+    }),
+  ).current;
+
   const board = boardQuery.data;
   const habits = board?.habits ?? [];
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ['habits'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // habit ticks feed the dashboard streak
   }
 
   // Optimistically flip a cell, then persist. Server recomputes score on refetch.
   async function toggleCell(habit: HabitRow, day: string, cur: CheckStatus) {
+    if (day > today) return; // can't do a habit in the future
     const next = nextStatus(cur);
-    queryClient.setQueryData<Board>(['habits', today], prev => {
+    queryClient.setQueryData<Board>(['habits', today, anchor], prev => {
       if (!prev) return prev;
       return {
         ...prev,
@@ -191,6 +229,12 @@ export default function HabitsScreen() {
           editing={editingPayload}
           onClose={() => { setSheetOpen(false); setEditing(null); }}
           onSuccess={() => { invalidate(); setSheetOpen(false); setEditing(null); }}
+          onDelete={editing ? () => {
+            const h = editing;
+            setSheetOpen(false);
+            setEditing(null);
+            deleteHabit(h); // opens the confirm dialog
+          } : undefined}
         />
       )}
 
@@ -236,13 +280,24 @@ export default function HabitsScreen() {
               <>
                 {/* ── Weekly Board ───────────────────────────────────────── */}
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>This Week</Text>
+                  <View style={styles.weekNav}>
+                    <TouchableOpacity style={styles.weekNavBtn} onPress={() => setWeekOffset(o => o - 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={styles.weekNavArrow}>‹</Text>
+                    </TouchableOpacity>
+                    {/* Tap the label to jump back to the current week */}
+                    <TouchableOpacity onPress={() => setWeekOffset(0)}>
+                      <Text style={styles.sectionTitle}>{weekLabel(weekOffset, board?.days)}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.weekNavBtn} onPress={() => setWeekOffset(o => o + 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={styles.weekNavArrow}>›</Text>
+                    </TouchableOpacity>
+                  </View>
                   <TouchableOpacity style={styles.addBtn} onPress={() => { setEditing(null); setSheetOpen(true); }}>
                     <Text style={styles.addBtnText}>+ Add</Text>
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.boardCard}>
+                <View style={styles.boardCard} {...panResponder.panHandlers}>
                   {/* Header row: weekday letters, today highlighted */}
                   <View style={styles.boardRow}>
                     <View style={styles.labelCell} />
@@ -272,6 +327,7 @@ export default function HabitsScreen() {
                         </TouchableOpacity>
                         {h.week.map(w => {
                           const isToday = w.day === board?.todayIso;
+                          const isFuture = w.day > today;
                           return (
                             <TouchableOpacity
                               key={w.day}
@@ -279,8 +335,10 @@ export default function HabitsScreen() {
                                 styles.checkCell,
                                 isToday && styles.checkCellToday,
                                 w.status && { backgroundColor: col.soft },
+                                isFuture && styles.checkCellFuture,
                               ]}
-                              activeOpacity={0.6}
+                              activeOpacity={isFuture ? 1 : 0.6}
+                              disabled={isFuture}
                               onPress={() => toggleCell(h, w.day, w.status)}
                             >
                               <Text style={styles.checkMark}>{w.status ? SYMBOL[w.status] : ''}</Text>
@@ -367,6 +425,12 @@ const makeStyles = (c: Theme) => StyleSheet.create({
 
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: c.text },
+  weekNav: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  weekNavBtn: {
+    width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: c.chipBg, borderWidth: 1, borderColor: c.cardBorder,
+  },
+  weekNavArrow: { fontSize: 16, lineHeight: 18, color: c.textMuted, fontWeight: '700' },
   addBtn: { backgroundColor: c.primary, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6 },
   addBtnText: { color: c.onColor, fontSize: 13, fontWeight: '700' },
 
@@ -395,6 +459,7 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', backgroundColor: c.chipBg,
   },
   checkCellToday: { borderColor: c.primary, borderWidth: 1.5 },
+  checkCellFuture: { opacity: 0.35 },
   checkMark: { fontSize: 14 },
 
   // stat cards

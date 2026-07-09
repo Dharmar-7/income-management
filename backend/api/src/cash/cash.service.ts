@@ -80,16 +80,44 @@ export class CashService {
       );
     }
 
-    return this.prisma.cashTransaction.create({
-      data: {
-        userId,
-        amount: dto.amount,
-        flow: CashFlow.OUT,
-        source: dto.source as CashSource,
-        note: dto.note?.trim() || null,
-        date: new Date(dto.date),
-      },
-    });
+    // Mirror a "Cash Payment" (SPENT) as a DEBIT transaction so it shows in the
+    // transactions list and monthly expense summary. DEPOSITED is just moving
+    // money back to the bank — not an expense — so it gets no mirror.
+    // Current time-of-day is stamped on the chosen date so two same-amount cash
+    // payments on one day don't collide with the (userId, merchant, amount, date)
+    // unique constraint.
+    const now = new Date();
+    const txDate = new Date(dto.date);
+    txDate.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+
+    const [entry] = await Promise.all([
+      this.prisma.cashTransaction.create({
+        data: {
+          userId,
+          amount: dto.amount,
+          flow: CashFlow.OUT,
+          source: dto.source as CashSource,
+          note: dto.note?.trim() || null,
+          date: new Date(dto.date),
+        },
+      }),
+      dto.source === 'SPENT'
+        ? this.prisma.transaction
+            .create({
+              data: {
+                userId,
+                amount: dto.amount,
+                merchant: dto.note?.trim() || 'Cash Payment',
+                description: 'Paid with cash in hand',
+                date: txDate,
+                type: 'DEBIT',
+                source: 'MANUAL',
+              },
+            })
+            .catch(() => null) // mirror is best-effort — never fail the cash entry
+        : Promise.resolve(null),
+    ]);
+    return entry;
   }
 
   // Delete a cash transaction (to correct mistakes)

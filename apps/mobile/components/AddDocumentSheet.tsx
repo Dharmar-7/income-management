@@ -5,6 +5,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuth } from '@clerk/clerk-expo';
 import { apiFetch } from '@/lib/api';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
@@ -70,8 +72,27 @@ export default function AddDocumentSheet({ visible, onClose, onSuccess }: Props)
     if (!res.canceled) takeAsset(res.assets[0]);
   }
 
+  // Pick any file (PDF or image) from the phone's file manager / Downloads.
+  async function pickFile() {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      copyToCacheDirectory: true,
+    });
+    if (res.canceled) return;
+    const file = res.assets[0];
+    if (!file) return;
+    if (file.size && file.size > 5 * 1024 * 1024) {
+      setAlertInfo({ title: 'File too large', message: 'Maximum size is 5 MB. Try a compressed PDF or a photo instead.' });
+      return;
+    }
+    const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+    setPicked({ base64, mimeType: file.mimeType ?? 'application/pdf', uri: file.uri });
+    // Prefer the real filename over the generated guess.
+    if (!name && file.name) setName(file.name.replace(/\.[^.]+$/, ''));
+  }
+
   async function handleSubmit() {
-    if (!picked) { setAlertInfo({ title: 'No file', message: 'Take a photo or choose an image first.' }); return; }
+    if (!picked) { setAlertInfo({ title: 'No file', message: 'Take a photo, choose an image, or attach a file first.' }); return; }
     if (!name.trim()) { setAlertInfo({ title: 'Missing name', message: 'Give the document a name.' }); return; }
     setLoading(true);
     try {
@@ -112,10 +133,18 @@ export default function AddDocumentSheet({ visible, onClose, onSuccess }: Props)
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 24 }}>
               {/* Pick / preview */}
               {picked ? (
-                <TouchableOpacity onPress={pickGallery} activeOpacity={0.8}>
-                  <Image source={{ uri: picked.uri }} style={styles.preview} resizeMode="cover" />
-                  <Text style={styles.replaceHint}>Tap image to replace</Text>
-                </TouchableOpacity>
+                picked.mimeType.startsWith('image') ? (
+                  <TouchableOpacity onPress={pickGallery} activeOpacity={0.8}>
+                    <Image source={{ uri: picked.uri }} style={styles.preview} resizeMode="cover" />
+                    <Text style={styles.replaceHint}>Tap image to replace</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={pickFile} activeOpacity={0.8} style={styles.filePreview}>
+                    <Text style={{ fontSize: 36 }}>📄</Text>
+                    <Text style={styles.filePreviewText}>PDF attached</Text>
+                    <Text style={styles.replaceHint}>Tap to replace</Text>
+                  </TouchableOpacity>
+                )
               ) : (
                 <View style={styles.pickRow}>
                   <TouchableOpacity style={styles.pickBtn} onPress={takePhoto}>
@@ -125,6 +154,10 @@ export default function AddDocumentSheet({ visible, onClose, onSuccess }: Props)
                   <TouchableOpacity style={styles.pickBtn} onPress={pickGallery}>
                     <Text style={styles.pickIcon}>🖼️</Text>
                     <Text style={styles.pickLabel}>Gallery</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.pickBtn} onPress={pickFile}>
+                    <Text style={styles.pickIcon}>📎</Text>
+                    <Text style={styles.pickLabel}>Files</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -185,6 +218,8 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   pickIcon: { fontSize: 28 },
   pickLabel: { fontSize: 13, fontWeight: '600', color: c.textMuted },
   preview: { width: '100%', height: 180, borderRadius: 14, backgroundColor: c.track },
+  filePreview: { alignItems: 'center', paddingVertical: 24, borderRadius: 14, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, marginBottom: 8 },
+  filePreviewText: { fontSize: 14, fontWeight: '600', color: c.text, marginTop: 6 },
   replaceHint: { fontSize: 11, color: c.textFaint, textAlign: 'center', marginTop: 6, marginBottom: 8 },
 
   field: { marginBottom: 14 },
