@@ -8,6 +8,11 @@ import { TransactionType } from '@prisma/client';
 const { PDFParse } = require('pdf-parse') as {
   PDFParse: new (opts: { data: Uint8Array; password?: string }) => {
     getText(): Promise<{ text: string }>;
+    getScreenshot(params?: {
+      desiredWidth?: number;
+      imageBuffer?: boolean;
+      imageDataUrl?: boolean;
+    }): Promise<{ pages: { data: Uint8Array }[] }>;
     destroy(): Promise<void>;
   };
 };
@@ -85,14 +90,36 @@ export class StatementParserService {
       const parser = new PDFParse({ data: buffer });
       try {
         const { text } = await parser.getText();
-        return text ?? '';
+        // pdf-parse emits a "-- N of M --" marker per page even when the page has
+        // no text at all, so an image-only PDF looks non-empty and sails past the
+        // length check — then fails later with a misleading "no transactions"
+        // error (seen with TMB e-statements, whose pages are rendered as images).
+        const realChars = (text ?? '')
+          .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '')
+          .replace(/\s/g, '').length;
+        if (realChars >= 20) return text;
+
+        // No usable text layer — render each page to a bitmap and OCR it with
+        // the same Tesseract pipeline used for photos. @napi-rs/canvas ships
+        // prebuilt binaries for linux-x64, so this works on Render.
+        this.logger.log('PDF has no text layer — rendering pages to images for OCR.');
+        const shot = await parser.getScreenshot({
+          desiredWidth: 2200, // the OCR sweet spot found for photos (see preprocessImage)
+          imageBuffer: true,
+          imageDataUrl: false,
+        });
+        const prepped: Buffer[] = [];
+        for (const page of shot.pages) {
+          prepped.push(await this.preprocessImage(Buffer.from(page.data)));
+        }
+        return this.ocrAll(prepped);
       } finally {
         await parser.destroy().catch(() => {});
       }
     }
     if (mimetype.startsWith('image/')) {
       const prepped = await this.preprocessImage(buffer);
-      return this.ocr(prepped);
+      return this.ocrAll([prepped]);
     }
     throw new BadRequestException('Unsupported file type. Upload a PDF or an image (PNG/JPG).');
   }
@@ -124,7 +151,9 @@ export class StatementParserService {
     }
   }
 
-  private async ocr(buffer: Buffer): Promise<string> {
+  // OCR one or more page images with a single shared Tesseract worker —
+  // worker startup costs seconds, so multi-page PDFs must not pay it per page.
+  private async ocrAll(buffers: Buffer[]): Promise<string> {
     // Lazy-load Tesseract so it only spins up when an image is actually uploaded.
     const { createWorker, PSM } = await import('tesseract.js');
     const worker = await createWorker('eng');
@@ -138,8 +167,12 @@ export class StatementParserService {
         tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
         preserve_interword_spaces: '1',
       });
-      const { data } = await worker.recognize(buffer);
-      return data.text ?? '';
+      let text = '';
+      for (const buffer of buffers) {
+        const { data } = await worker.recognize(buffer);
+        text += (data.text ?? '') + '\n';
+      }
+      return text;
     } catch (err) {
       this.logger.error('OCR failed', err as Error);
       throw new BadRequestException('Could not read the image. Try a clearer, straight-on photo.');
