@@ -16,7 +16,8 @@
       "env": {
         "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_test_Z2VudWluZS1qZW5uZXQtNzguY2xlcmsuYWNjb3VudHMuZGV2JA",
         "EXPO_PUBLIC_API_URL": "https://income-management-xo9d.onrender.com",
-        "EXPO_PUBLIC_SENTRY_DSN": "https://9fa65358b47088f3648a693c7177afcc@o4511703863066624.ingest.us.sentry.io/4511703897735173"
+        "EXPO_PUBLIC_SENTRY_DSN": "https://9fa65358b47088f3648a693c7177afcc@o4511703863066624.ingest.us.sentry.io/4511703897735173",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "production": {
