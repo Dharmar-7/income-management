@@ -17,9 +17,14 @@ export class UsersController {
   @Post('me')
   @UseGuards(ClerkAuthGuard)
   async syncUser(@CurrentUser() clerkUserId: string) {
-    // Fetch the full user profile from Clerk
-    const clerkUser = await clerk.users.getUser(clerkUserId);
+    // Fast path: the row almost always exists (every app open calls this).
+    // Skipping the Clerk profile fetch turns ~800ms of cross-continent API
+    // latency into a ~10ms DB lookup. Clerk is only consulted on the very
+    // first sign-in, when we genuinely need the email/name to create the row.
+    const existing = await this.usersService.findByClerkId(clerkUserId);
+    if (existing) return existing;
 
+    const clerkUser = await clerk.users.getUser(clerkUserId);
     const email = clerkUser.emailAddresses[0]?.emailAddress ?? '';
     const name = [clerkUser.firstName, clerkUser.lastName]
       .filter(Boolean)
