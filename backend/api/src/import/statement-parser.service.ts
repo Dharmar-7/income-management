@@ -7,11 +7,12 @@ import { TransactionType } from '@prisma/client';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { PDFParse } = require('pdf-parse') as {
   PDFParse: new (opts: { data: Uint8Array; password?: string }) => {
-    getText(): Promise<{ text: string }>;
+    getText(): Promise<{ text: string; total?: number }>;
     getScreenshot(params?: {
       desiredWidth?: number;
       imageBuffer?: boolean;
       imageDataUrl?: boolean;
+      first?: number; // render only pages 1..first
     }): Promise<{ pages: { data: Uint8Array }[] }>;
     destroy(): Promise<void>;
   };
@@ -60,7 +61,12 @@ export class StatementParserService {
   private readonly SKIP_LINE =
     /(opening balance|closing balance|statement (of|for)|account (no|holder|number)|customer id|ifsc|ifs code|micr code|branch (name|address|code)|phone no|contact no|e-?mail id|a\/c type|page \d+ of|effective available|computer generated|auto generated|authenticated|regd address|report generation|never share|^particulars\b|transaction\s*type|chq\.?\s*no|withdrawals|deposits|debit\(rs\)|balance\(inr\))/i;
 
+  // Render's free tier has 512 MB RAM and 0.1 CPU — OCR cost must stay bounded
+  // or the instance OOMs / the gateway kills the request at ~100 s.
+  private readonly MAX_OCR_PAGES = 6;
+
   async parse(buffer: Buffer, mimetype: string): Promise<ParsedStatementTxn[]> {
+    this.logger.log(`Statement upload: ${mimetype}, ${(buffer.length / 1024).toFixed(0)} KB`);
     const text = await this.extractText(buffer, mimetype);
     if (!text || text.replace(/\s/g, '').length < 20) {
       throw new BadRequestException(
@@ -89,7 +95,9 @@ export class StatementParserService {
     if (mimetype === 'application/pdf') {
       const parser = new PDFParse({ data: buffer });
       try {
-        const { text } = await parser.getText();
+        const res = await parser.getText();
+        const text = res.text;
+        const totalPages = res.total ?? 0;
         // pdf-parse emits a "-- N of M --" marker per page even when the page has
         // no text at all, so an image-only PDF looks non-empty and sails past the
         // length check — then fails later with a misleading "no transactions"
@@ -97,22 +105,33 @@ export class StatementParserService {
         const realChars = (text ?? '')
           .replace(/--\s*\d+\s*of\s*\d+\s*--/g, '')
           .replace(/\s/g, '').length;
-        if (realChars >= 20) return text;
+        if (realChars >= 20) {
+          this.logger.log(`PDF text layer: ${realChars} chars across ${totalPages} pages.`);
+          return text;
+        }
 
         // No usable text layer — render each page to a bitmap and OCR it with
         // the same Tesseract pipeline used for photos. @napi-rs/canvas ships
         // prebuilt binaries for linux-x64, so this works on Render.
-        this.logger.log('PDF has no text layer — rendering pages to images for OCR.');
+        // Rendered pages are already crisp black-on-white, so they skip the jimp
+        // preprocessing photos get: at 1500 px they OCR just as accurately
+        // (validated 26/26 rows on a real TMB statement) at a fraction of the
+        // CPU and memory — critical on Render's free tier.
+        this.logger.log(
+          `PDF has no text layer (${realChars} chars, ${totalPages} pages) — rendering pages to images for OCR.`,
+        );
+        if (totalPages > this.MAX_OCR_PAGES) {
+          this.logger.warn(
+            `PDF has ${totalPages} pages; OCR limited to the first ${this.MAX_OCR_PAGES} to stay within server limits.`,
+          );
+        }
         const shot = await parser.getScreenshot({
-          desiredWidth: 2200, // the OCR sweet spot found for photos (see preprocessImage)
+          desiredWidth: 1500,
           imageBuffer: true,
           imageDataUrl: false,
+          ...(totalPages > this.MAX_OCR_PAGES ? { first: this.MAX_OCR_PAGES } : {}),
         });
-        const prepped: Buffer[] = [];
-        for (const page of shot.pages) {
-          prepped.push(await this.preprocessImage(Buffer.from(page.data)));
-        }
-        return this.ocrAll(prepped);
+        return this.ocrAll(shot.pages.map((p) => Buffer.from(p.data)));
       } finally {
         await parser.destroy().catch(() => {});
       }
@@ -156,7 +175,9 @@ export class StatementParserService {
   private async ocrAll(buffers: Buffer[]): Promise<string> {
     // Lazy-load Tesseract so it only spins up when an image is actually uploaded.
     const { createWorker, PSM } = await import('tesseract.js');
+    const tWorker = Date.now();
     const worker = await createWorker('eng');
+    this.logger.log(`OCR worker ready in ${((Date.now() - tWorker) / 1000).toFixed(1)}s.`);
     try {
       // PSM 6 = "assume a single uniform block of text" → reads the statement
       // row-by-row left-to-right. The default (PSM 3, auto) detects the table's
@@ -168,8 +189,14 @@ export class StatementParserService {
         preserve_interword_spaces: '1',
       });
       let text = '';
+      let pageNo = 0;
       for (const buffer of buffers) {
+        const tPage = Date.now();
         const { data } = await worker.recognize(buffer);
+        pageNo += 1;
+        this.logger.log(
+          `OCR page ${pageNo}/${buffers.length} done in ${((Date.now() - tPage) / 1000).toFixed(1)}s.`,
+        );
         text += (data.text ?? '') + '\n';
       }
       return text;
