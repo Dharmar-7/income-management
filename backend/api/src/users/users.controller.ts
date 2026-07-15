@@ -1,7 +1,8 @@
-import { Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Patch, Post, UseGuards } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { createClerkClient } from '@clerk/backend';
 
 const clerk = createClerkClient({
@@ -31,5 +32,16 @@ export class UsersController {
       .join(' ') || undefined;
 
     return this.usersService.findOrCreate(clerkUserId, email, name);
+  }
+
+  // PATCH /users/me — user-tunable settings (currently: month start day,
+  // so reports can follow a salary cycle instead of the calendar month)
+  @Patch('me')
+  @UseGuards(ClerkAuthGuard)
+  updateSettings(
+    @CurrentUser() clerkUserId: string,
+    @Body() dto: UpdateSettingsDto,
+  ) {
+    return this.usersService.updateSettings(clerkUserId, dto.monthStartDay);
   }
 }

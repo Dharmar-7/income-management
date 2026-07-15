@@ -17,4 +17,11 @@ export class UsersService {
   async findByClerkId(clerkId: string) {
     return this.prisma.user.findUnique({ where: { clerkId } });
   }
+
+  async updateSettings(clerkId: string, monthStartDay: number) {
+    return this.prisma.user.update({
+      where: { clerkId },
+      data: { monthStartDay },
+    });
+  }
 }

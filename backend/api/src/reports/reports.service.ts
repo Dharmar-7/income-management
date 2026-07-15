@@ -10,19 +10,49 @@ export class ReportsService {
     return this.prisma.resolveUserId(clerkId);
   }
 
+  // ─── Pay-cycle month windows ─────────────────────────────────────────────────
+  // A user's "money month" starts on their monthStartDay (1 = calendar month,
+  // the default). A cycle that starts late in the month (day > 15) is named
+  // after the month it ENDS in — someone paid on the 28th calls
+  // 28 Jun → 27 Jul "July", because that salary funds July's spending. A cycle
+  // that starts early keeps its start month's name (5 Jul → 4 Aug is "July").
+  private monthWindow(y: number, m: number, startDay: number) {
+    const d = Math.min(Math.max(startDay || 1, 1), 28);
+    if (d === 1) return { start: new Date(y, m - 1, 1), end: new Date(y, m, 0, 23, 59, 59) };
+    if (d > 15) return { start: new Date(y, m - 2, d), end: new Date(y, m - 1, d - 1, 23, 59, 59) };
+    return { start: new Date(y, m - 1, d), end: new Date(y, m, d - 1, 23, 59, 59) };
+  }
+
+  // Which cycle label does `now` fall in? (Used when no month/year is passed.)
+  private currentCycle(now: Date, startDay: number) {
+    const d = Math.min(Math.max(startDay || 1, 1), 28);
+    let shift = 0;
+    if (d > 15 && now.getDate() >= d) shift = 1; // late cycle already rolled into next label
+    if (d > 1 && d <= 15 && now.getDate() < d) shift = -1; // early cycle still in previous label
+    const ref = new Date(now.getFullYear(), now.getMonth() + shift, 1);
+    return { month: ref.getMonth() + 1, year: ref.getFullYear() };
+  }
+
+  private async getMonthStartDay(userId: string): Promise<number> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { monthStartDay: true },
+    });
+    return user?.monthStartDay ?? 1;
+  }
+
   // ─── Monthly Report ──────────────────────────────────────────────────────────
   // Returns a rich breakdown for a single month: summary, top categories, top merchants
   async getMonthlyReport(clerkId: string, month?: number, year?: number) {
     const userId = await this.resolveUserId(clerkId);
-    const now = new Date();
-    const m = month ?? now.getMonth() + 1;
-    const y = year ?? now.getFullYear();
+    const startDay = await this.getMonthStartDay(userId);
+    const cur = this.currentCycle(new Date(), startDay);
+    const m = month ?? cur.month;
+    const y = year ?? cur.year;
 
-    const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 0, 23, 59, 59);
-    // Previous month window — for the month-over-month category deltas.
-    const prevStart = new Date(y, m - 2, 1);
-    const prevEnd = new Date(y, m - 1, 0, 23, 59, 59);
+    const { start, end } = this.monthWindow(y, m, startDay);
+    // Previous cycle window — for the month-over-month category deltas.
+    const { start: prevStart, end: prevEnd } = this.monthWindow(y, m - 1, startDay);
 
     // Run all queries in parallel for speed
     const [income, expenses, txCount, categoryGroups, merchantGroups, curCatAll, prevCatAll] = await Promise.all([
@@ -117,6 +147,10 @@ export class ReportsService {
     return {
       month: m,
       year: y,
+      // The actual date range this "month" covers — differs from the calendar
+      // month when the user sets a custom monthStartDay. UIs show it so the
+      // cycle is never a mystery.
+      period: { start: start.toISOString(), end: end.toISOString(), startDay },
       summary: {
         totalIncome,
         totalExpenses,
@@ -191,12 +225,13 @@ export class ReportsService {
   async generateCsv(clerkId: string, month?: number, year?: number): Promise<string> {
     const userId = await this.resolveUserId(clerkId);
 
-    // Build date filter only if month/year are provided
-    const now = new Date();
-    const m = month ?? now.getMonth() + 1;
-    const y = year ?? now.getFullYear();
-    const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 0, 23, 59, 59);
+    // Build date filter only if month/year are provided — same pay-cycle
+    // window as the monthly report so the CSV matches what's on screen.
+    const startDay = await this.getMonthStartDay(userId);
+    const cur = this.currentCycle(new Date(), startDay);
+    const m = month ?? cur.month;
+    const y = year ?? cur.year;
+    const { start, end } = this.monthWindow(y, m, startDay);
 
     const transactions = await this.prisma.transaction.findMany({
       where: {

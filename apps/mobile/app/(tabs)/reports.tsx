@@ -11,6 +11,9 @@ import type { Theme } from '@/lib/theme';
 interface MonthlyReport {
   month: number;
   year: number;
+  // Actual date range this "month" covers — shifts when a custom pay-cycle
+  // start day is set in Settings.
+  period?: { start: string; end: string; startDay: number };
   summary: {
     totalIncome: number;
     totalExpenses: number;
@@ -66,9 +69,22 @@ export default function ReportsScreen() {
     else setMonth(m => m - 1);
   }
 
+  // With a late pay-cycle start (e.g. day 28), the ongoing cycle is labelled
+  // with NEXT month's name once the start day passes — so the newest
+  // reachable month can be one ahead of the calendar.
+  function latestCycle(startDay: number) {
+    let m = now.getMonth() + 1;
+    let y = now.getFullYear();
+    if (startDay > 15 && now.getDate() >= startDay) {
+      m += 1;
+      if (m > 12) { m = 1; y += 1; }
+    }
+    return { m, y };
+  }
+
   function nextMonth() {
-    const isCurrentMonth = month === now.getMonth() + 1 && year === now.getFullYear();
-    if (isCurrentMonth) return;
+    const latest = latestCycle(r?.period?.startDay ?? 1);
+    if (month === latest.m && year === latest.y) return;
     if (month === 12) { setMonth(1); setYear(y => y + 1); }
     else setMonth(m => m + 1);
   }
@@ -128,13 +144,23 @@ export default function ReportsScreen() {
         <TouchableOpacity onPress={prevMonth} style={{ padding: 4 }}>
           <Text style={{ fontSize: 22, color: c.primary, fontWeight: '600' }}>‹</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 16, fontWeight: '700', color: c.text }}>
-          {FULL_MONTHS[month - 1]} {year}
-        </Text>
+        <View style={{ alignItems: 'center' }}>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: c.text }}>
+            {FULL_MONTHS[month - 1]} {year}
+          </Text>
+          {r?.period && r.period.startDay > 1 && (
+            <Text style={{ fontSize: 11, color: c.textFaint, marginTop: 2 }}>
+              {new Date(r.period.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              {' – '}
+              {new Date(r.period.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+            </Text>
+          )}
+        </View>
         <TouchableOpacity onPress={nextMonth} style={{ padding: 4 }}>
           <Text style={{
             fontSize: 22, fontWeight: '600',
-            color: (month === now.getMonth() + 1 && year === now.getFullYear()) ? c.textFaint : c.primary,
+            color: (() => { const l = latestCycle(r?.period?.startDay ?? 1); return month === l.m && year === l.y; })()
+              ? c.textFaint : c.primary,
           }}>›</Text>
         </TouchableOpacity>
       </View>
@@ -165,13 +191,31 @@ export default function ReportsScreen() {
             <SummaryCard label="Income" value={formatINR(r.summary.totalIncome)} bg={c.success} />
             <SummaryCard label="Expenses" value={formatINR(r.summary.totalExpenses)} bg={c.danger} />
           </View>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
             <SummaryCard
               label="Net Savings"
               value={formatINR(r.summary.netSavings)}
               bg={r.summary.netSavings >= 0 ? c.primary : c.orange}
             />
             <SummaryCard label="Transactions" value={String(r.summary.transactionCount)} bg={c.teal} />
+          </View>
+
+          {/* The month's bottom line, spelled out as the actual deduction */}
+          <View style={{
+            backgroundColor: c.card, borderRadius: 16, padding: 14, alignItems: 'center',
+            borderWidth: 1, borderColor: c.cardBorder, marginBottom: 16,
+          }}>
+            <Text style={{ fontSize: 13, color: c.textMuted }}>
+              {formatINR(r.summary.totalIncome)} income − {formatINR(r.summary.totalExpenses)} spent
+            </Text>
+            <Text style={{
+              fontSize: 18, fontWeight: '800', marginTop: 3,
+              color: r.summary.netSavings >= 0 ? c.success : c.danger,
+            }}>
+              {r.summary.netSavings >= 0
+                ? `= ${formatINR(r.summary.netSavings)} left this month`
+                : `= ${formatINR(Math.abs(r.summary.netSavings))} overspent this month`}
+            </Text>
           </View>
 
           {/* Top categories */}

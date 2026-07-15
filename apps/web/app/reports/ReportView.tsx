@@ -11,6 +11,9 @@ import CustomSelect from '@/components/CustomSelect';
 interface MonthlyReport {
   month: number;
   year: number;
+  // Actual date range this "month" covers — shifts when a custom pay-cycle
+  // start day is set in Settings.
+  period?: { start: string; end: string; startDay: number };
   summary: {
     totalIncome: number;
     totalExpenses: number;
@@ -141,6 +144,14 @@ export default function ReportView() {
           options={[now.getFullYear() - 1, now.getFullYear()].map(y => ({ value: String(y), label: String(y) }))}
         />
 
+        {r?.period && r.period.startDay > 1 && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            {new Date(r.period.start).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+            {' – '}
+            {new Date(r.period.end).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+          </span>
+        )}
+
         <button
           onClick={handleExport}
           disabled={downloading || !r || r.summary.transactionCount === 0}
@@ -162,17 +173,31 @@ export default function ReportView() {
           ))}
         </div>
       ) : r ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <SummaryCard label="Income" value={formatINR(r.summary.totalIncome)} color="text-white" bg="bg-gradient-to-br from-emerald-500 to-teal-600" />
-          <SummaryCard label="Expenses" value={formatINR(r.summary.totalExpenses)} color="text-white" bg="bg-gradient-to-br from-rose-500 to-pink-600" />
-          <SummaryCard
-            label="Net Savings"
-            value={formatINR(r.summary.netSavings)}
-            color="text-white"
-            bg={r.summary.netSavings >= 0 ? 'bg-gradient-to-br from-violet-500 to-indigo-600' : 'bg-gradient-to-br from-orange-500 to-amber-600'}
-          />
-          <SummaryCard label="Transactions" value={String(r.summary.transactionCount)} color="text-white" bg="bg-gradient-to-br from-sky-500 to-blue-600" />
-        </div>
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <SummaryCard label="Income" value={formatINR(r.summary.totalIncome)} color="text-white" bg="bg-gradient-to-br from-emerald-500 to-teal-600" />
+            <SummaryCard label="Expenses" value={formatINR(r.summary.totalExpenses)} color="text-white" bg="bg-gradient-to-br from-rose-500 to-pink-600" />
+            <SummaryCard
+              label="Net Savings"
+              value={formatINR(r.summary.netSavings)}
+              color="text-white"
+              bg={r.summary.netSavings >= 0 ? 'bg-gradient-to-br from-violet-500 to-indigo-600' : 'bg-gradient-to-br from-orange-500 to-amber-600'}
+            />
+            <SummaryCard label="Transactions" value={String(r.summary.transactionCount)} color="text-white" bg="bg-gradient-to-br from-sky-500 to-blue-600" />
+          </div>
+
+          {/* The month's bottom line, spelled out as the actual deduction */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 p-5 text-center">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {formatINR(r.summary.totalIncome)} income − {formatINR(r.summary.totalExpenses)} spent
+            </p>
+            <p className={`mt-1 text-xl font-bold ${r.summary.netSavings >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              {r.summary.netSavings >= 0
+                ? `= ${formatINR(r.summary.netSavings)} left this month`
+                : `= ${formatINR(Math.abs(r.summary.netSavings))} overspent this month`}
+            </p>
+          </div>
+        </>
       ) : null}
 
       {/* Top categories + Top merchants */}

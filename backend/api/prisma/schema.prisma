@@ -27,6 +27,11 @@ model User {
   gmailSyncedAt     DateTime? // last time we successfully synced emails
   smsSyncedAt       DateTime? // last time we synced bank SMS (Android only)
 
+  // Day the user's "money month" starts (1 = plain calendar month). Users paid
+  // at month-end set e.g. 28 so reports align with their salary cycle.
+  // Capped at 28 in the API so February always works.
+  monthStartDay Int @default(1)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
