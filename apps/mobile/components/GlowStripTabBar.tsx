@@ -103,9 +103,10 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
 
           {/* Crystal gem — centre tab */}
           <TouchableOpacity style={s.ti} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
-            {(gemActive || open) && <View style={s.arc} />}
-            <View style={s.ic}>
-              <VeloraGem size={20} />
+            <View style={[s.ic, (gemActive || open) && (dark ? s.icActiveDark : s.icActiveLight)]}>
+              <View style={(gemActive || open) ? s.iconGrow : undefined}>
+                <VeloraGem size={20} />
+              </View>
             </View>
             <View style={[s.dot, (gemActive || open) && s.dotActive]} />
             <Text style={[s.tabLabel, { color: (gemActive || open) ? '#6366f1' : dark ? 'rgba(255,255,255,0.75)' : '#52525b' }]}>
@@ -126,9 +127,8 @@ function TabItem({
 }: { icon: string; label: string; active: boolean; dark: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity style={s.ti} onPress={onPress} activeOpacity={0.7}>
-      {active && <View style={s.arc} />}
-      <View style={s.ic}>
-        <Text style={s.emoji}>{icon}</Text>
+      <View style={[s.ic, active && (dark ? s.icActiveDark : s.icActiveLight)]}>
+        <Text style={[s.emoji, active && s.iconGrow]}>{icon}</Text>
       </View>
       <View style={[s.dot, active && s.dotActive]} />
       <Text style={[s.tabLabel, { color: active ? '#6366f1' : dark ? 'rgba(255,255,255,0.75)' : '#52525b' }]}>
@@ -164,32 +164,20 @@ const s = StyleSheet.create({
     minWidth: 54,
   },
   ic: {
-    // Fixed icon box keeps the touch target/layout identical across states —
-    // the active marker is the floating arc above, not a filled background.
+    // Fixed icon box keeps the touch target/layout identical across states.
+    // Radius 16 on a 32px-tall box = fully rounded ends, so the active tint
+    // reads as a soft pill, not a rectangle.
     width: 50, height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The active-tab marker: a thin indigo arc floating above the icon. A View
-  // with only its top border drawn + big top corner radii renders as a curved
-  // line — no SVG dependency needed. Absolutely positioned so toggling it
-  // never shifts the bar's layout.
-  arc: {
-    position: 'absolute',
-    top: -2,
-    alignSelf: 'center',
-    width: 30,
-    height: 10,
-    borderTopWidth: 3,
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
-    borderTopColor: '#6366f1',
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  // Active tab = soft indigo pill tint + the icon grows slightly. Deliberately
+  // no shadow/elevation: Android draws elevation as a rectangular smudge
+  // around transparent views.
+  icActiveDark:  { backgroundColor: 'rgba(99,102,241,0.18)' },
+  icActiveLight: { backgroundColor: 'rgba(99,102,241,0.14)' },
+  iconGrow: { transform: [{ scale: 1.18 }] },
   emoji: { fontSize: 18 },
   dot: {
     width: 4, height: 4,
