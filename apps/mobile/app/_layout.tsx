@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/react-native';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { resourceCache } from '@clerk/clerk-expo/resource-cache';
 import { tokenCache } from '@/lib/tokenCache';
 import { QueryClient, keepPreviousData } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -105,6 +106,11 @@ function RootLayout() {
         <ClerkProvider
           publishableKey={publishableKey}
           tokenCache={Platform.OS === 'web' ? undefined : tokenCache}
+          // Persists Clerk's session/user resources so a cold start with no
+          // network keeps the user signed in — without this, Clerk's boot-time
+          // validation call fails offline and the app falls to the sign-in
+          // screen until connectivity returns.
+          __experimental_resourceCache={Platform.OS === 'web' ? undefined : resourceCache}
         >
           <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
             <ThemedStatusBar />
