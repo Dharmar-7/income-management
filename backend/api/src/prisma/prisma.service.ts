@@ -1,15 +1,25 @@
-import { Injectable, OnModuleInit, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, NotFoundException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
+  private readonly logger = new Logger(PrismaService.name);
+
   // clerkId → internal User.id. This mapping never changes for a given user,
   // so we cache it in memory and skip a DB round-trip on every authenticated
   // request (previously every endpoint did its own user.findUnique first).
   private readonly userIdCache = new Map<string, string>();
 
   async onModuleInit() {
-    await this.$connect();
+    // Connect eagerly so the first real request is fast — but NEVER block app
+    // startup on it. If the DB is unreachable (e.g. Neon quota-suspended), an
+    // awaited $connect() hangs onModuleInit → Nest never finishes booting → the
+    // HTTP server never listens → even /health (no DB) stops responding, taking
+    // the WHOLE API down over a DB-only outage. Prisma connects lazily on the
+    // first query anyway, so swallowing a failure here is safe.
+    this.$connect().catch(err =>
+      this.logger.warn(`Initial DB connect failed (will retry lazily on first query): ${err.message}`),
+    );
   }
 
   // Resolve our internal User.id from a Clerk user id, cached after first lookup.

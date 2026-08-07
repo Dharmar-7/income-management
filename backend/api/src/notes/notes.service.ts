@@ -1,7 +1,7 @@
 import {
-  Injectable, NotFoundException, BadRequestException, UnauthorizedException,
+  Injectable, Logger, NotFoundException, BadRequestException, UnauthorizedException,
 } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateNoteDto } from './dto/create-note.dto';
@@ -11,6 +11,8 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 @Injectable()
 export class NotesService {
+  private readonly logger = new Logger(NotesService.name);
+
   constructor(private prisma: PrismaService) {}
 
   private resolveUserId(clerkId: string): Promise<string> {
@@ -200,18 +202,27 @@ export class NotesService {
     return notes;
   }
 
-  // Cron job — runs every minute, marks overdue reminders sent
-  // (covers cases where no user is actively polling)
-  @Cron('* * * * *')
+  // Cron job — marks overdue reminders sent (covers cases where no user is
+  // actively polling). Runs every 30 min, NOT every minute: the reminder cutoff
+  // is already 1 hour, so minute-level precision buys nothing — and an every-60s
+  // DB write kept the Neon compute from ever autosuspending, which drained the
+  // free-tier compute quota. Every 30 min lets Neon idle (and sleep) between runs.
+  // Wrapped so a transient DB outage (e.g. P1001) logs once instead of throwing
+  // an unhandled rejection every run.
+  @Cron(CronExpression.EVERY_30_MINUTES)
   async markOverdueReminders() {
     const cutoff = new Date(Date.now() - 60 * 60 * 1000); // older than 1 hour
-    await this.prisma.note.updateMany({
-      where: {
-        reminderSent: false,
-        reminderAt: { lte: cutoff },
-      },
-      data: { reminderSent: true },
-    });
+    try {
+      await this.prisma.note.updateMany({
+        where: {
+          reminderSent: false,
+          reminderAt: { lte: cutoff },
+        },
+        data: { reminderSent: true },
+      });
+    } catch (err) {
+      this.logger.warn(`markOverdueReminders skipped: ${(err as Error).message}`);
+    }
   }
 
   // ─── All tags for autocomplete ────────────────────────────────────────────
