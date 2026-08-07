@@ -15,6 +15,7 @@ import AddSavingSheet, { type EditingSaving } from '@/components/AddSavingSheet'
 import AddGoalSheet from '@/components/AddGoalSheet';
 import ContributeGoalSheet from '@/components/ContributeGoalSheet';
 import AppAlert from '@/components/AppAlert';
+import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -106,6 +107,7 @@ export default function SavingsScreen() {
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [contributingGoal, setContributingGoal] = useState<Goal | null>(null);
+  const [linkState, setLinkState] = useState<{ saving: Saving; matches: TxMatch[] } | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -225,26 +227,46 @@ export default function SavingsScreen() {
     });
   }
 
+  // POST a contribution, optionally linking a bank transaction (reclassified to
+  // INVESTMENT server-side). Shows what happened so the user knows it wasn't
+  // double-counted as an expense.
+  async function doContribute(s: Saving, transactionId?: string | null) {
+    try {
+      const token = await getToken();
+      const res = await apiFetch<{ linkResult?: { transactionId: string | null; reclassified: boolean } }>(
+        `/savings/${s.id}/contribute`, token!,
+        { method: 'POST', body: JSON.stringify(transactionId ? { transactionId } : {}) },
+      );
+      invalidate();
+      const linked = res.linkResult?.reclassified;
+      setAlertData({
+        title: linked ? 'Linked ✅' : 'Added ✅',
+        message: linked
+          ? `Added ${formatINR(s.sipAmount!)} to "${s.name}" and matched your bank debit — counted as an investment, not an expense.`
+          : `Added ${formatINR(s.sipAmount!)} to "${s.name}".`,
+      });
+    } catch (err: any) {
+      setAlertData({ title: 'Could not add contribution', message: err?.message ?? 'Please try again.' });
+    }
+  }
+
   function contributeSip(s: Saving) {
     if (!s.sipAmount) return;
     // The monthly top-up isn't SIP-only — RDs and other instruments use it too.
     const word = s.type === 'MUTUAL_FUNDS' ? 'SIP' : s.type === 'RECURRING_DEPOSIT' ? 'deposit' : 'contribution';
     setAlertData({
       title: `Add this month’s ${word}`,
-      message: `Add ${formatINR(s.sipAmount)} to "${s.name}"? This bumps both the invested amount and current value.`,
+      message: `Add ${formatINR(s.sipAmount)} to "${s.name}"? We'll match it to your bank debit so it isn't counted as an expense too.`,
       confirmLabel: 'Add',
       onConfirm: async () => {
-        try {
-          const token = await getToken();
-          await apiFetch(`/savings/${s.id}/contribute`, token!, { method: 'POST', body: JSON.stringify({}) });
-          invalidate();
-          setAlertData({
-            title: `Added ✅`,
-            message: `Added ${formatINR(s.sipAmount!)} to "${s.name}".`,
-          });
-        } catch (err: any) {
-          setAlertData({ title: `Could not add ${word}`, message: err?.message ?? 'Please try again.' });
+        const token = await getToken();
+        // If several bank debits could be this contribution, ask which one.
+        const matches = await apiFetch<TxMatch[]>(`/savings/${s.id}/contribution-matches`, token!);
+        if (matches.length >= 2) {
+          setLinkState({ saving: s, matches });
+          return;
         }
+        await doContribute(s);
       },
     });
   }
@@ -302,6 +324,21 @@ export default function SavingsScreen() {
           goalName={contributingGoal.name}
           onClose={() => setContributingGoal(null)}
           onSuccess={() => { invalidate(); setContributingGoal(null); }}
+        />
+      )}
+
+      {linkState && (
+        <LinkTransactionSheet
+          visible
+          title="Link this contribution"
+          subtitle={`${formatINR(linkState.saving.sipAmount ?? 0)} · ${linkState.saving.name}`}
+          matches={linkState.matches}
+          onClose={() => setLinkState(null)}
+          onPick={async (txId) => {
+            const saving = linkState.saving;
+            setLinkState(null);
+            await doContribute(saving, txId);
+          }}
         />
       )}
 

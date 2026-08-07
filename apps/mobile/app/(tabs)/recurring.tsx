@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
 import AddRecurringSheet from '@/components/AddRecurringSheet';
 import AppAlert from '@/components/AppAlert';
+import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -78,6 +79,7 @@ export default function RecurringScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringItem | null>(null);
+  const [linkState, setLinkState] = useState<{ item: RecurringItem; matches: TxMatch[] } | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string; icon?: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -92,18 +94,47 @@ export default function RecurringScreen() {
     },
   });
 
+  function invalidatePay() {
+    qc.invalidateQueries({ queryKey: ['recurring'] });
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  }
+
+  function showPayResult(linkResult?: { transactionId: string | null; autoCreated: boolean }) {
+    const linked = linkResult && linkResult.transactionId && !linkResult.autoCreated;
+    setAlertData({
+      title: linked ? 'Linked ✅' : 'Marked Paid',
+      icon: linked ? '🔗' : '✅',
+      message: linked
+        ? 'Matched to your existing bank transaction — no duplicate created.'
+        : 'Recorded as a new transaction (no matching bank transaction found).',
+    });
+  }
+
+  async function pay(item: RecurringItem, transactionId?: string | null) {
+    const token = await getToken();
+    const res = await apiFetch<{ linkResult?: { transactionId: string | null; autoCreated: boolean } }>(
+      `/recurring/${item.id}/pay`, token!,
+      { method: 'POST', body: JSON.stringify(transactionId ? { transactionId } : {}) },
+    );
+    invalidatePay();
+    showPayResult(res.linkResult);
+  }
+
   async function handlePay(item: RecurringItem) {
     setAlertData({
       title: 'Mark as Paid',
-      message: `Mark "${item.name}" (${formatINR(item.amount)}) as paid and advance to the next due date?`,
+      message: `Mark "${item.name}" (${formatINR(item.amount)}) as paid?\n\nWe'll match it to your bank transaction so it isn't counted twice.`,
       icon: '✅',
       confirmLabel: 'Mark Paid',
       onConfirm: async () => {
         const token = await getToken();
-        await apiFetch(`/recurring/${item.id}/pay`, token!, { method: 'POST' });
-        qc.invalidateQueries({ queryKey: ['recurring'] });
-        qc.invalidateQueries({ queryKey: ['transactions'] });
-        qc.invalidateQueries({ queryKey: ['dashboard'] }); // payment creates a tx
+        const matches = await apiFetch<TxMatch[]>(`/recurring/${item.id}/matches`, token!);
+        if (matches.length >= 2) {
+          setLinkState({ item, matches });
+          return;
+        }
+        await pay(item);
       },
     });
   }
@@ -220,6 +251,21 @@ export default function RecurringScreen() {
           confirmDestructive={alertData.confirmDestructive}
           onClose={() => setAlertData(null)}
           onConfirm={alertData.onConfirm}
+        />
+      )}
+
+      {linkState && (
+        <LinkTransactionSheet
+          visible
+          title="Link this bill"
+          subtitle={`${formatINR(linkState.item.amount)} · ${linkState.item.name}`}
+          matches={linkState.matches}
+          onClose={() => setLinkState(null)}
+          onPick={async (txId) => {
+            const item = linkState.item;
+            setLinkState(null);
+            await pay(item, txId);
+          }}
         />
       )}
     </SafeAreaView>

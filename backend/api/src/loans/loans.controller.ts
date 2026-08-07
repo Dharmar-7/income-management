@@ -31,9 +31,20 @@ export class LoansController {
     return this.service.update(clerkId, id, dto);
   }
 
+  // Candidate bank transactions to link this EMI to (link picker).
+  @Get(':id/payment-matches')
+  paymentMatches(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.service.getPaymentMatches(clerkId, id);
+  }
+
+  // Pass { transactionId } to link an existing bank tx; omit to auto-link/create.
   @Post(':id/pay')
-  markPaid(@CurrentUser() clerkId: string, @Param('id') id: string) {
-    return this.service.markPaid(clerkId, id);
+  markPaid(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Body() body: { transactionId?: string } = {},
+  ) {
+    return this.service.markPaid(clerkId, id, { transactionId: body.transactionId });
   }
 
   @Delete(':id')

@@ -236,9 +236,33 @@ model Saving {
 
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform       InvestmentPlatform? @relation(fields: [platformId], references: [id], onDelete: SetNull)
+  contributions  SavingContribution[]
 
   @@index([userId])
   @@index([platformId])
+}
+
+// ─────────────────────────────────────────
+// SAVING CONTRIBUTION
+// One SIP top-up / contribution to a Saving. Lets each contribution map to the
+// real bank transaction that funded it (which gets reclassified to INVESTMENT
+// so it isn't also counted as an expense). Bare transactionId, looked up on
+// read — same convention as Settlement / LoanPayment.
+// ─────────────────────────────────────────
+model SavingContribution {
+  id            String   @id @default(uuid())
+  amount        Float
+  date          DateTime @default(now())
+  transactionId String?  @unique
+
+  createdAt DateTime @default(now())
+
+  savingId String
+  userId   String
+  saving   Saving @relation(fields: [savingId], references: [id], onDelete: Cascade)
+
+  @@index([savingId, date])
+  @@index([userId])
 }
 
 enum SavingType {
@@ -417,6 +441,14 @@ model LoanPayment {
   id       String   @id @default(uuid())
   amount   Float
   paidDate DateTime
+
+  // The real bank transaction this EMI payment maps to. When set, the app did
+  // NOT create its own mirror transaction (avoids double-counting the expense).
+  // Stored as a bare id (looked up on read) — same convention as Settlement.
+  transactionId String? @unique
+  // True when the app auto-created the transaction (cash / not-yet-imported),
+  // vs linked an existing bank transaction. Governs cleanup on payment delete.
+  txAutoCreated Boolean @default(false)
 
   createdAt DateTime @default(now())
 

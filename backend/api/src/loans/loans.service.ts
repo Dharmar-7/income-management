@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
+import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
 
 function computeEmi(principal: number, annualRate: number, tenure: number): number {
   if (annualRate === 0) return +(principal / tenure).toFixed(2);
@@ -31,7 +32,33 @@ export class LoansService {
       include: { payments: { orderBy: { paidDate: 'desc' } } },
       orderBy: { createdAt: 'asc' },
     });
-    return loans.map(l => this.enrich(l));
+
+    // Attach linked-transaction snippets to payments (same approach as Settlements).
+    const txIds = loans
+      .flatMap(l => l.payments.map(p => p.transactionId))
+      .filter((id): id is string => !!id);
+    const txMap = new Map<string, { id: string; merchant: string; amount: number; date: Date }>();
+    if (txIds.length) {
+      const txs = await this.prisma.transaction.findMany({
+        where: { id: { in: txIds } },
+        select: { id: true, merchant: true, amount: true, date: true },
+      });
+      txs.forEach(t => txMap.set(t.id, t));
+    }
+
+    return loans.map(l => this.enrich(l, txMap));
+  }
+
+  // Candidate bank transactions this loan's EMI could map to (for the link picker).
+  async getPaymentMatches(clerkId: string, id: string) {
+    const userId = await this.resolveUserId(clerkId);
+    const loan = await this.assertOwner(clerkId, id);
+    return findTransactionMatches(this.prisma, userId, {
+      amount: loan.emiAmount,
+      type: 'DEBIT',
+      aroundDate: new Date(),
+      windowDays: 7,
+    });
   }
 
   async create(clerkId: string, dto: CreateLoanDto) {
@@ -70,7 +97,12 @@ export class LoansService {
     return this.enrich(loan);
   }
 
-  async markPaid(clerkId: string, id: string) {
+  // Record an EMI as paid. Instead of always creating a mirror DEBIT (which
+  // double-counts when the bank also imported the EMI), map it to a real bank
+  // transaction: use an explicit `transactionId` if given, else auto-link a
+  // single unambiguous match, else fall back to creating a mirror (cash / not
+  // yet imported). `txAutoCreated` records which happened so delete can clean up.
+  async markPaid(clerkId: string, id: string, opts?: { transactionId?: string }) {
     const userId = await this.resolveUserId(clerkId);
     const loan = await this.assertOwner(clerkId, id);
     const paidEmis = loan.payments.length;
@@ -79,24 +111,47 @@ export class LoansService {
       throw new Error('All EMIs already paid for this loan.');
     }
 
-    // The payment record, the mirror DEBIT transaction, and the possible
-    // loan-closure update are independent — run them in one parallel batch
-    // instead of 3-4 sequential cross-region round-trips.
+    // Resolve which transaction this payment maps to.
+    let linkedTxId: string | null = null;
+    let autoCreated = false;
+
+    if (opts?.transactionId) {
+      const tx = await this.prisma.transaction.findFirst({
+        where: { id: opts.transactionId, userId },
+      });
+      if (!tx) throw new NotFoundException('Transaction to link not found.');
+      linkedTxId = tx.id;
+    } else {
+      const matches = await findTransactionMatches(this.prisma, userId, {
+        amount: loan.emiAmount, type: 'DEBIT', aroundDate: new Date(), windowDays: 7,
+      });
+      const auto = pickAutoLink(matches);
+      if (auto) {
+        linkedTxId = auto.id; // exactly one bank match → link, no duplicate
+      } else {
+        const created = await this.prisma.transaction.create({
+          data: {
+            userId,
+            amount: loan.emiAmount,
+            merchant: loan.lender,
+            description: `EMI: ${loan.name}`,
+            date: new Date(),
+            type: 'DEBIT',
+            source: 'MANUAL',
+          },
+        });
+        linkedTxId = created.id;
+        autoCreated = true;
+      }
+    }
+
     const newPaidEmis = paidEmis + 1;
     const nowClosed = newPaidEmis >= loan.tenure;
     const [payment] = await Promise.all([
       this.prisma.loanPayment.create({
-        data: { loanId: id, amount: loan.emiAmount, paidDate: new Date() },
-      }),
-      this.prisma.transaction.create({
         data: {
-          userId,
-          amount: loan.emiAmount,
-          merchant: loan.lender,
-          description: `EMI: ${loan.name}`,
-          date: new Date(),
-          type: 'DEBIT',
-          source: 'MANUAL',
+          loanId: id, amount: loan.emiAmount, paidDate: new Date(),
+          transactionId: linkedTxId, txAutoCreated: autoCreated,
         },
       }),
       ...(nowClosed
@@ -104,17 +159,31 @@ export class LoansService {
         : []),
     ]);
 
-    // Compose the response from what we already hold — no refetch needed.
-    return this.enrich({
+    const enriched = this.enrich({
       ...loan,
       isActive: nowClosed ? false : loan.isActive,
       payments: [payment, ...loan.payments],
     });
+    // Tell the client what happened so it can show the right toast.
+    return { ...enriched, linkResult: { transactionId: linkedTxId, autoCreated } };
   }
 
   async remove(clerkId: string, id: string) {
-    await this.assertOwner(clerkId, id);
-    await this.prisma.loan.delete({ where: { id } });
+    const userId = await this.resolveUserId(clerkId);
+    const loan = await this.assertOwner(clerkId, id);
+
+    // Delete only the mirror transactions the app itself created for this loan —
+    // never the user's real bank transactions we merely linked to.
+    const autoTxIds = loan.payments
+      .filter((p: any) => p.txAutoCreated && p.transactionId)
+      .map((p: any) => p.transactionId as string);
+
+    await this.prisma.$transaction([
+      ...(autoTxIds.length
+        ? [this.prisma.transaction.deleteMany({ where: { id: { in: autoTxIds }, userId } })]
+        : []),
+      this.prisma.loan.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 
@@ -130,7 +199,7 @@ export class LoansService {
     return loan;
   }
 
-  private enrich(loan: any) {
+  private enrich(loan: any, txMap?: Map<string, { id: string; merchant: string; amount: number; date: Date }>) {
     const paidEmis = loan.payments?.length ?? 0;
     const remaining = loan.tenure - paidEmis;
     const outstanding = computeOutstanding(loan.emiAmount, loan.interestRate, loan.tenure, paidEmis);
@@ -140,8 +209,16 @@ export class LoansService {
     const start = new Date(loan.startDate);
     const nextEmiDate = new Date(start.getFullYear(), start.getMonth() + paidEmis, loan.emiDay);
 
+    // Surface the linked bank transaction (if any) on each payment.
+    const payments = (loan.payments ?? []).map((p: any) => ({
+      ...p,
+      linked: !!p.transactionId && !p.txAutoCreated,
+      transaction: p.transactionId ? txMap?.get(p.transactionId) ?? null : null,
+    }));
+
     return {
       ...loan,
+      payments,
       paidEmis,
       remainingEmis: remaining,
       outstandingBalance: outstanding,

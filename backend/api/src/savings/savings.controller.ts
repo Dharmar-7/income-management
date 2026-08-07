@@ -56,10 +56,17 @@ export class SavingsController {
     return this.service.updateSaving(userId, id, dto);
   }
 
-  // Add one month's SIP (or an explicit amount) to an investment
+  // Candidate bank transactions to link a SIP contribution to (link picker).
+  @Get(':id/contribution-matches')
+  contributionMatches(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.service.getContributionMatches(userId, id);
+  }
+
+  // Add one month's SIP (or an explicit amount) to an investment.
+  // Pass { transactionId } to link its bank debit (reclassified to INVESTMENT).
   @Post(':id/contribute')
   contribute(@CurrentUser() userId: string, @Param('id') id: string, @Body() dto: ContributeSavingDto) {
-    return this.service.contribute(userId, id, dto.amount);
+    return this.service.contribute(userId, id, dto.amount, dto.transactionId);
   }
 
   @Delete(':id')

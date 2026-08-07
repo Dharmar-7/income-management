@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRecurringDto } from './dto/create-recurring.dto';
+import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
 
 @Injectable()
 export class RecurringService {
@@ -56,7 +57,20 @@ export class RecurringService {
     });
   }
 
-  async markPaid(clerkId: string, id: string) {
+  // Candidate bank transactions this recurring bill could map to (link picker).
+  async getMatches(clerkId: string, id: string) {
+    const userId = await this.resolveUserId(clerkId);
+    const rec = await this.assertOwner(clerkId, id);
+    return findTransactionMatches(this.prisma, userId, {
+      amount: rec.amount, type: rec.type, aroundDate: new Date(), windowDays: 7,
+    });
+  }
+
+  // Mark this bill paid. Rather than always creating a mirror transaction (which
+  // double-counts when the bank also imported it), map it to a real bank
+  // transaction: link an explicit/auto-matched one and just label it, else
+  // create a mirror (cash / not yet imported). Either way, advance the due date.
+  async markPaid(clerkId: string, id: string, opts?: { transactionId?: string }) {
     const userId = await this.resolveUserId(clerkId);
     const rec = await this.assertOwner(clerkId, id);
 
@@ -66,25 +80,52 @@ export class RecurringService {
       rec.dayOfMonth,
     );
 
-    // Record it as a transaction so it shows up in history
-    await this.prisma.transaction.create({
-      data: {
-        userId,
-        amount: rec.amount,
-        merchant: rec.name,
-        description: `Recurring payment: ${rec.name}`,
-        date: new Date(),
-        type: rec.type,
-        source: 'MANUAL',
-        categoryId: rec.categoryId ?? null,
-      },
-    });
+    // Resolve which transaction represents this payment.
+    let txId = opts?.transactionId ?? null;
+    if (txId) {
+      const tx = await this.prisma.transaction.findFirst({ where: { id: txId, userId } });
+      if (!tx) throw new NotFoundException('Transaction to link not found.');
+    } else {
+      const matches = await findTransactionMatches(this.prisma, userId, {
+        amount: rec.amount, type: rec.type, aroundDate: new Date(), windowDays: 7,
+      });
+      const auto = pickAutoLink(matches);
+      if (auto) txId = auto.id;
+    }
 
-    return this.prisma.recurringTransaction.update({
+    let linkResult: { transactionId: string; autoCreated: boolean };
+    if (txId) {
+      // Link: label/categorize the existing bank tx instead of duplicating it.
+      await this.prisma.transaction.update({
+        where: { id: txId },
+        data: {
+          description: `Recurring payment: ${rec.name}`,
+          ...(rec.categoryId ? { categoryId: rec.categoryId } : {}),
+        },
+      });
+      linkResult = { transactionId: txId, autoCreated: false };
+    } else {
+      const created = await this.prisma.transaction.create({
+        data: {
+          userId,
+          amount: rec.amount,
+          merchant: rec.name,
+          description: `Recurring payment: ${rec.name}`,
+          date: new Date(),
+          type: rec.type,
+          source: 'MANUAL',
+          categoryId: rec.categoryId ?? null,
+        },
+      });
+      linkResult = { transactionId: created.id, autoCreated: true };
+    }
+
+    const updated = await this.prisma.recurringTransaction.update({
       where: { id },
       data: { nextDueDate },
       include: { category: true },
     });
+    return { ...updated, linkResult };
   }
 
   async remove(clerkId: string, id: string) {

@@ -4,6 +4,7 @@ import { CreatePlatformDto } from './dto/create-platform.dto';
 import { UpdatePlatformDto } from './dto/update-platform.dto';
 import { CreateSavingDto } from './dto/create-saving.dto';
 import { UpdateSavingDto } from './dto/update-saving.dto';
+import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
 
 @Injectable()
 export class SavingsService {
@@ -195,7 +196,20 @@ export class SavingsService {
   // (a fresh contribution is worth what you put in until the market moves), so
   // it never creates an artificial gain or loss. `amount` defaults to the
   // investment's stored monthly sipAmount.
-  async contribute(clerkId: string, savingId: string, amount?: number) {
+  // Candidate bank transactions this SIP contribution could map to.
+  async getContributionMatches(clerkId: string, savingId: string, amount?: number) {
+    const userId = await this.resolveUserId(clerkId);
+    const saving = await this.prisma.saving.findUnique({ where: { id: savingId, userId } });
+    if (!saving) throw new NotFoundException('Investment not found.');
+    const amt = amount ?? saving.sipAmount ?? 0;
+    if (amt <= 0) return [];
+    // SIP debits are imported as DEBIT (we reclassify to INVESTMENT on link).
+    return findTransactionMatches(this.prisma, userId, {
+      amount: amt, type: 'DEBIT', aroundDate: new Date(), windowDays: 7,
+    });
+  }
+
+  async contribute(clerkId: string, savingId: string, amount?: number, transactionId?: string) {
     const userId = await this.resolveUserId(clerkId);
     const saving = await this.prisma.saving.findUnique({
       where: { id: savingId, userId },
@@ -225,14 +239,42 @@ export class SavingsService {
       }
     }
 
-    const updated = await this.prisma.saving.update({
-      where: { id: savingId },
-      data: {
-        investedAmount: saving.investedAmount + amt,
-        currentValue: saving.currentValue + amt,
-      },
-      include: { platform: true },
-    });
+    // Resolve the bank transaction this contribution maps to (if any).
+    let linkedTxId: string | null = null;
+    if (transactionId) {
+      const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, userId } });
+      if (!tx) throw new NotFoundException('Transaction to link not found.');
+      linkedTxId = tx.id;
+    } else {
+      const matches = await findTransactionMatches(this.prisma, userId, {
+        amount: amt, type: 'DEBIT', aroundDate: new Date(), windowDays: 7,
+      });
+      const auto = pickAutoLink(matches);
+      if (auto) linkedTxId = auto.id;
+    }
+
+    // A fresh contribution is worth what you put in (no gain/loss yet), so bump
+    // both invested and current value. Record the contribution, and reclassify
+    // the linked bank debit to INVESTMENT so it drops out of monthly expenses.
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.saving.update({
+        where: { id: savingId },
+        data: {
+          investedAmount: saving.investedAmount + amt,
+          currentValue: saving.currentValue + amt,
+        },
+        include: { platform: true },
+      }),
+      this.prisma.savingContribution.create({
+        data: { savingId, userId, amount: amt, transactionId: linkedTxId },
+      }),
+      ...(linkedTxId
+        ? [this.prisma.transaction.update({
+            where: { id: linkedTxId },
+            data: { type: 'INVESTMENT' as any },
+          })]
+        : []),
+    ]);
 
     const netCost = updated.investedAmount + updated.charges;
     return {
@@ -241,6 +283,7 @@ export class SavingsService {
       gainLoss: updated.currentValue - netCost,
       gainPercent: netCost > 0 ? ((updated.currentValue - netCost) / netCost) * 100 : 0,
       contributed: amt,
+      linkResult: { transactionId: linkedTxId, reclassified: !!linkedTxId },
     };
   }
 

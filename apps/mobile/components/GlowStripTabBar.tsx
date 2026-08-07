@@ -103,7 +103,8 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
 
           {/* Crystal gem — centre tab */}
           <TouchableOpacity style={s.ti} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
-            <View style={[s.ic, (gemActive || open) && (dark ? s.icActiveDark : s.icActiveLight)]}>
+            <View style={s.ic}>
+              {(gemActive || open) && <View style={[s.pill, dark ? s.pillDark : s.pillLight]} pointerEvents="none" />}
               <View style={(gemActive || open) ? s.iconGrow : undefined}>
                 <VeloraGem size={20} />
               </View>
@@ -127,7 +128,8 @@ function TabItem({
 }: { icon: string; label: string; active: boolean; dark: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity style={s.ti} onPress={onPress} activeOpacity={0.7}>
-      <View style={[s.ic, active && (dark ? s.icActiveDark : s.icActiveLight)]}>
+      <View style={s.ic}>
+        {active && <View style={[s.pill, dark ? s.pillDark : s.pillLight]} pointerEvents="none" />}
         <Text style={[s.emoji, active && s.iconGrow]}>{icon}</Text>
       </View>
       <View style={[s.dot, active && s.dotActive]} />
@@ -165,18 +167,27 @@ const s = StyleSheet.create({
   },
   ic: {
     // Fixed icon box keeps the touch target/layout identical across states.
-    // Radius 16 on a 32px-tall box = fully rounded ends, so the active tint
-    // reads as a soft pill, not a rectangle.
     width: 50, height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    // overflow:hidden forces Android to clip to the rounded outline every draw.
+    overflow: 'hidden',
   },
-  // Active tab = soft indigo pill tint + the icon grows slightly. Deliberately
-  // no shadow/elevation: Android draws elevation as a rectangular smudge
-  // around transparent views.
-  icActiveDark:  { backgroundColor: 'rgba(99,102,241,0.18)' },
-  icActiveLight: { backgroundColor: 'rgba(99,102,241,0.14)' },
+  // Active tab = soft indigo pill tint (icon grows slightly). Rendered as a
+  // freshly-MOUNTED absolute layer per active tab — NOT a background toggled on
+  // a persistent view. On Android, adding a backgroundColor to an already-mounted
+  // rounded view skips the outline re-clip and paints a rectangle; mounting a new
+  // rounded view (radius 16 on a 32px box = fully rounded ends) always renders
+  // the pill correctly. Deliberately no shadow/elevation: Android draws elevation
+  // as a rectangular smudge around transparent views.
+  pill: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 16,
+  },
+  pillDark:  { backgroundColor: 'rgba(99,102,241,0.18)' },
+  pillLight: { backgroundColor: 'rgba(99,102,241,0.14)' },
   iconGrow: { transform: [{ scale: 1.18 }] },
   emoji: { fontSize: 18 },
   dot: {

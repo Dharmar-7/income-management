@@ -3,10 +3,12 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SavingsService } from './savings.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-// Minimal in-memory Prisma stub — no DB. We stub only the calls the methods
-// under test make: resolveUserId, saving.findUnique/update, and (for the
-// platform-balance guard) investmentPlatform.findUnique.
-function makeMockPrisma(saving: any, platform?: any) {
+// Minimal in-memory Prisma stub — no DB. We stub the calls the methods under
+// test make: resolveUserId, saving.findUnique/update, investmentPlatform (the
+// balance guard), the transaction-match queries, and $transaction (runs the
+// batched writes). `txMatches` seeds the candidate bank transactions returned
+// by findTransactionMatches.
+function makeMockPrisma(saving: any, platform?: any, txMatches: any[] = []) {
   return {
     resolveUserId: jest.fn().mockResolvedValue('user-1'),
     saving: {
@@ -17,11 +19,24 @@ function makeMockPrisma(saving: any, platform?: any) {
     investmentPlatform: {
       findUnique: jest.fn().mockResolvedValue(platform ?? null),
     },
+    transaction: {
+      findMany: jest.fn().mockResolvedValue(txMatches),
+      update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'tx1', ...data })),
+      findFirst: jest.fn().mockResolvedValue(txMatches[0] ?? null),
+    },
+    savingContribution: {
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn().mockResolvedValue({ id: 'c1' }),
+    },
+    loanPayment: { findMany: jest.fn().mockResolvedValue([]) },
+    settlement: { findMany: jest.fn().mockResolvedValue([]) },
+    // $transaction here just runs the already-issued mock promises in order.
+    $transaction: jest.fn().mockImplementation((ops: Promise<any>[]) => Promise.all(ops)),
   };
 }
 
-async function buildService(saving: any, platform?: any) {
-  const prisma = makeMockPrisma(saving, platform);
+async function buildService(saving: any, platform?: any, txMatches: any[] = []) {
+  const prisma = makeMockPrisma(saving, platform, txMatches);
   const module: TestingModule = await Test.createTestingModule({
     providers: [SavingsService, { provide: PrismaService, useValue: prisma }],
   }).compile();
@@ -84,6 +99,35 @@ describe('SavingsService.contribute', () => {
   it('404s when the investment does not exist', async () => {
     const { service } = await buildService(null);
     await expect(service.contribute('clerk-1', 'missing')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('auto-links a single matching bank debit and reclassifies it to INVESTMENT', async () => {
+    // one candidate DEBIT of the same amount → unambiguous auto-link
+    const match = { id: 'tx1', amount: 100, merchant: 'Groww', date: new Date(), type: 'DEBIT' };
+    const { service, prisma } = await buildService({ ...baseSaving }, undefined, [match]);
+
+    const res = await service.contribute('clerk-1', 's1');
+
+    // records the contribution with the linked tx
+    expect(prisma.savingContribution.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ transactionId: 'tx1' }) }),
+    );
+    // reclassifies that bank debit so it stops counting as an expense
+    expect(prisma.transaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'tx1' }, data: { type: 'INVESTMENT' } }),
+    );
+    expect(res.linkResult).toEqual({ transactionId: 'tx1', reclassified: true });
+  });
+
+  it('does NOT auto-link when two candidates are ambiguous', async () => {
+    const m1 = { id: 'tx1', amount: 100, merchant: 'Groww', date: new Date(), type: 'DEBIT' };
+    const m2 = { id: 'tx2', amount: 100, merchant: 'Zerodha', date: new Date(), type: 'DEBIT' };
+    const { service, prisma } = await buildService({ ...baseSaving }, undefined, [m1, m2]);
+
+    const res = await service.contribute('clerk-1', 's1');
+
+    expect(prisma.transaction.update).not.toHaveBeenCalled();
+    expect(res.linkResult).toEqual({ transactionId: null, reclassified: false });
   });
 });
 

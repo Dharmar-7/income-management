@@ -9,6 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
 import AddLoanSheet from '@/components/AddLoanSheet';
 import AppAlert from '@/components/AppAlert';
+import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -76,6 +77,7 @@ export default function LoansScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<LoanItem | null>(null);
+  const [linkState, setLinkState] = useState<{ loan: LoanItem; matches: TxMatch[] } | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string; icon?: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -90,18 +92,50 @@ export default function LoansScreen() {
     },
   });
 
+  function invalidatePay() {
+    qc.invalidateQueries({ queryKey: ['loans'] });
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+  }
+
+  // Show what happened after paying so the user knows it wasn't double-counted.
+  function showPayResult(linkResult?: { transactionId: string | null; autoCreated: boolean }) {
+    const linked = linkResult && linkResult.transactionId && !linkResult.autoCreated;
+    setAlertData({
+      title: linked ? 'Linked ✅' : 'EMI Recorded',
+      icon: linked ? '🔗' : '💳',
+      message: linked
+        ? 'Matched to your existing bank transaction — no duplicate created.'
+        : 'Recorded as a new transaction (no matching bank transaction found).',
+    });
+  }
+
+  async function payEmi(loan: LoanItem, transactionId?: string | null) {
+    const token = await getToken();
+    const res = await apiFetch<{ linkResult?: { transactionId: string | null; autoCreated: boolean } }>(
+      `/loans/${loan.id}/pay`, token!,
+      { method: 'POST', body: JSON.stringify(transactionId ? { transactionId } : {}) },
+    );
+    invalidatePay();
+    showPayResult(res.linkResult);
+  }
+
   async function handlePayEmi(loan: LoanItem) {
     setAlertData({
       title: 'Pay EMI',
-      message: `Pay EMI of ${formatINR(loan.emiAmount)} for "${loan.name}"?\n\nThis will record a debit transaction and advance the payment count.`,
+      message: `Pay EMI of ${formatINR(loan.emiAmount)} for "${loan.name}"?\n\nWe'll match it to your bank transaction so it isn't counted twice.`,
       icon: '💳',
       confirmLabel: 'Pay EMI',
       onConfirm: async () => {
         const token = await getToken();
-        await apiFetch(`/loans/${loan.id}/pay`, token!, { method: 'POST' });
-        qc.invalidateQueries({ queryKey: ['loans'] });
-        qc.invalidateQueries({ queryKey: ['transactions'] });
-        qc.invalidateQueries({ queryKey: ['dashboard'] }); // EMI creates a DEBIT tx
+        // If several bank transactions could be this EMI, ask which one.
+        const matches = await apiFetch<TxMatch[]>(`/loans/${loan.id}/payment-matches`, token!);
+        if (matches.length >= 2) {
+          setLinkState({ loan, matches });
+          return;
+        }
+        // 0 or 1 → backend auto-links the single match or records a new one.
+        await payEmi(loan);
       },
     });
   }
@@ -247,6 +281,21 @@ export default function LoansScreen() {
           confirmDestructive={alertData.confirmDestructive}
           onClose={() => setAlertData(null)}
           onConfirm={alertData.onConfirm}
+        />
+      )}
+
+      {linkState && (
+        <LinkTransactionSheet
+          visible
+          title="Link this EMI"
+          subtitle={`${formatINR(linkState.loan.emiAmount)} · ${linkState.loan.name}`}
+          matches={linkState.matches}
+          onClose={() => setLinkState(null)}
+          onPick={async (txId) => {
+            const loan = linkState.loan;
+            setLinkState(null);
+            await payEmi(loan, txId);
+          }}
         />
       )}
     </SafeAreaView>
