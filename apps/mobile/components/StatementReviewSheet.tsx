@@ -5,6 +5,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
+import BankPickerField from '@/components/BankPickerField';
 
 export interface ParsedRow {
   date: string;
@@ -35,7 +36,7 @@ interface Props {
   categories: Category[];
   committing: boolean;
   onClose: () => void;
-  onConfirm: (rows: CommitRow[]) => void;
+  onConfirm: (rows: CommitRow[], bankId: string | null) => void;
 }
 
 interface EditRow extends ParsedRow {
@@ -53,6 +54,7 @@ export default function StatementReviewSheet({ visible, rows, categories, commit
 
   const [items, setItems] = useState<EditRow[]>([]);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [bankId, setBankId] = useState<string | null>(null);
 
   // Seed the editable list each time a fresh set of parsed rows arrives.
   useEffect(() => {
@@ -72,7 +74,7 @@ export default function StatementReviewSheet({ visible, rows, categories, commit
     const chosen: CommitRow[] = items
       .filter((i) => i.include)
       .map(({ include, balance, ...r }) => r);
-    if (chosen.length > 0) onConfirm(chosen);
+    if (chosen.length > 0) onConfirm(chosen, bankId);
   }
 
   return (
@@ -104,7 +106,10 @@ export default function StatementReviewSheet({ visible, rows, categories, commit
             <Text style={s.selectAllText}>{allSelected ? 'Deselect all' : 'Select all'}</Text>
           </TouchableOpacity>
 
-          <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
+          {/* One bank for the whole imported batch (colour-coded in the list). */}
+          <BankPickerField label="Bank for this import" value={bankId} onChange={setBankId} />
+
+          <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingBottom: 8 }} showsVerticalScrollIndicator={false}>
             {items.map((it, idx) => {
               const cat = catById(it.categoryId);
               const isCredit = it.type === 'CREDIT';

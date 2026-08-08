@@ -92,7 +92,8 @@ export class ImportService {
   }
 
   // Step 2: insert the rows the user kept. Dedup is handled by skipDuplicates.
-  async commitStatement(clerkId: string, txns: StatementTxnDto[]): Promise<ImportSummary> {
+  // The whole batch can be tagged with one bank (colour-coded in the list).
+  async commitStatement(clerkId: string, txns: StatementTxnDto[], bankId?: string): Promise<ImportSummary> {
     const userId = await this.resolveUserId(clerkId);
     const total = txns.length;
 
@@ -106,6 +107,7 @@ export class ImportService {
       source: ImportSource.STATEMENT,
       upiRef: t.upiRef?.trim() || undefined,
       categoryId: t.categoryId || undefined,
+      bankId: bankId || undefined,
     }));
 
     const result = await this.prisma.transaction.createMany({

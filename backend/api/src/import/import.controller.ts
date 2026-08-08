@@ -97,7 +97,7 @@ export class ImportController {
     @Body() dto: CommitStatementDto,
     @CurrentUser() userId: string,
   ) {
-    const summary = await this.importService.commitStatement(userId, dto.transactions);
+    const summary = await this.importService.commitStatement(userId, dto.transactions, dto.bankId);
     return {
       message: `Imported ${summary.imported} transactions.`,
       ...summary,

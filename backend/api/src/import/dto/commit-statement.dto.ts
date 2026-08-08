@@ -52,4 +52,9 @@ export class CommitStatementDto {
   @ValidateNested({ each: true })
   @Type(() => StatementTxnDto)
   transactions: StatementTxnDto[];
+
+  // Tag the whole imported batch with this bank (colour-coded in the list).
+  @IsOptional()
+  @IsString()
+  bankId?: string;
 }

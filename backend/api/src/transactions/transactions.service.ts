@@ -50,7 +50,7 @@ export class TransactionsService {
     const [transactions, total] = await Promise.all([
       this.prisma.transaction.findMany({
         where,
-        include: { category: true },
+        include: { category: true, bank: { select: { id: true, name: true, color: true } } },
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit,
@@ -222,19 +222,21 @@ export class TransactionsService {
       type?: TransactionType;
       date?: string;
       categoryId?: string;
+      bankId?: string;
       description?: string;
     },
   ) {
     const userId = await this.resolveUserId(clerkId);
 
     // Build the Prisma update payload from only the fields that were provided.
-    // Empty strings for category/note mean "clear it" (→ null).
+    // Empty strings for category/bank/note mean "clear it" (→ null).
     const update: {
       amount?: number;
       merchant?: string;
       type?: TransactionType;
       date?: Date;
       categoryId?: string | null;
+      bankId?: string | null;
       description?: string | null;
     } = {};
     if (data.amount !== undefined) update.amount = data.amount;
@@ -242,13 +244,14 @@ export class TransactionsService {
     if (data.type !== undefined) update.type = data.type;
     if (data.date !== undefined) update.date = new Date(data.date);
     if (data.categoryId !== undefined) update.categoryId = data.categoryId || null;
+    if (data.bankId !== undefined) update.bankId = data.bankId || null;
     if (data.description !== undefined) update.description = data.description.trim() || null;
 
     try {
       return await this.prisma.transaction.update({
         where: { id: transactionId, userId },
         data: update,
-        include: { category: true },
+        include: { category: true, bank: { select: { id: true, name: true, color: true } } },
       });
     } catch (e: any) {
       // Editing merchant/amount/date can collide with the @@unique([userId, merchant, amount, date])
@@ -279,8 +282,9 @@ export class TransactionsService {
           type: dto.type,
           source: ImportSource.MANUAL,
           categoryId: dto.categoryId || null,
+          bankId: dto.bankId || null,
         },
-        include: { category: true },
+        include: { category: true, bank: { select: { id: true, name: true, color: true } } },
       });
     } catch (e: any) {
       if (e?.code === 'P2002') {

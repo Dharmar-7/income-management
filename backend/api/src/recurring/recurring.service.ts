@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRecurringDto } from './dto/create-recurring.dto';
-import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
+import { findTransactionMatches } from '../common/transaction-match';
 
 @Injectable()
 export class RecurringService {
@@ -80,17 +80,12 @@ export class RecurringService {
       rec.dayOfMonth,
     );
 
-    // Resolve which transaction represents this payment.
-    let txId = opts?.transactionId ?? null;
+    // Resolve which transaction represents this payment. Link only what the
+    // user explicitly picked; otherwise record a fresh transaction.
+    const txId = opts?.transactionId ?? null;
     if (txId) {
       const tx = await this.prisma.transaction.findFirst({ where: { id: txId, userId } });
       if (!tx) throw new NotFoundException('Transaction to link not found.');
-    } else {
-      const matches = await findTransactionMatches(this.prisma, userId, {
-        amount: rec.amount, type: rec.type, aroundDate: new Date(), windowDays: 7,
-      });
-      const auto = pickAutoLink(matches);
-      if (auto) txId = auto.id;
     }
 
     let linkResult: { transactionId: string; autoCreated: boolean };

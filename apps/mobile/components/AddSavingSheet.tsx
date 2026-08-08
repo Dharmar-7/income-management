@@ -15,6 +15,8 @@ import { apiFetch } from '@/lib/api';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import AppAlert from '@/components/AppAlert';
 import DatePickerField from '@/components/DatePickerField';
+import TransactionLinkField from '@/components/TransactionLinkField';
+import type { PickerTx } from '@/components/TransactionPickerSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -91,6 +93,7 @@ function AddPlatformForm({ onClose, onSuccess }: { onClose: () => void; onSucces
   const [name, setName] = useState('');
   const [totalAdded, setTotalAdded] = useState('');
   const [note, setNote] = useState('');
+  const [linkedTx, setLinkedTx] = useState<PickerTx | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
@@ -112,6 +115,7 @@ function AddPlatformForm({ onClose, onSuccess }: { onClose: () => void; onSucces
           name: name.trim(),
           totalAdded: amount,
           note: note.trim() || undefined,
+          transactionId: linkedTx?.id, // the bank→wallet transfer → INVESTMENT
         }),
       });
       onSuccess();
@@ -170,6 +174,17 @@ function AddPlatformForm({ onClose, onSuccess }: { onClose: () => void; onSucces
         />
       </View>
 
+      <TransactionLinkField
+        label="Link bank transfer (optional)"
+        value={linkedTx}
+        onChange={setLinkedTx}
+        suggestAmount={parseFloat(totalAdded) || undefined}
+        type="DEBIT"
+        pickerTitle="Link the bank transfer"
+        pickerSubtitle="Money you moved from your bank into this wallet"
+        helpText="Pick the bank debit that funded this — it'll count as an investment, not an expense."
+      />
+
       <TouchableOpacity
         style={[styles.submitBtn, loading && { opacity: 0.6 }]}
         onPress={handleSubmit}
@@ -212,7 +227,12 @@ function AddSavingForm({ platforms, editing, onClose, onSuccess }: { platforms: 
   const [maturityDate, setMaturityDate] = useState(editing?.maturityDate ? editing.maturityDate.slice(0, 10) : '');
   const [platformId, setPlatformId] = useState(editing?.platformId ?? '');
   const [note, setNote] = useState(editing?.note ?? '');
+  const [linkedTx, setLinkedTx] = useState<PickerTx | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // A bank link only applies to a brand-new standalone investment (money straight
+  // from the bank). Wallet-funded buys draw down the platform balance instead.
+  const showLinkField = !isEdit && !platformId;
 
   async function handleSubmit() {
     if (!name.trim() || !investedAmount || !startDate) {
@@ -264,6 +284,8 @@ function AddSavingForm({ platforms, editing, onClose, onSuccess }: { platforms: 
             maturityDate: maturityDate || undefined,
             platformId: platformId || undefined,
             note: note.trim() || undefined,
+            // Only for standalone (bank-funded) buys → reclassified to INVESTMENT.
+            transactionId: platformId ? undefined : linkedTx?.id,
           }),
         });
       }
@@ -427,6 +449,26 @@ function AddSavingForm({ platforms, editing, onClose, onSuccess }: { platforms: 
         />
       </View>
 
+      {/* Funding source: standalone → link a bank debit; platform → drawn from wallet. */}
+      {showLinkField ? (
+        <TransactionLinkField
+          label="Link bank transaction (optional)"
+          value={linkedTx}
+          onChange={setLinkedTx}
+          suggestAmount={parseFloat(investedAmount) || undefined}
+          type="DEBIT"
+          pickerTitle="Link the funding transaction"
+          pickerSubtitle="The bank debit that paid for this investment"
+          helpText="Pick the bank debit that funded this — it'll count as an investment, not an expense."
+        />
+      ) : (!isEdit && platformId) ? (
+        <View style={styles.walletNote}>
+          <Text style={styles.walletNoteText}>
+            💼 Funded from your wallet balance — no bank transaction needed. The wallet balance will drop by this amount.
+          </Text>
+        </View>
+      ) : null}
+
       <TouchableOpacity
         style={[styles.submitBtn, loading && { opacity: 0.6 }]}
         onPress={handleSubmit}
@@ -539,6 +581,12 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   typeChipActive: { backgroundColor: c.primary, borderColor: c.primary },
   typeChipText: { fontSize: 12, color: c.textMuted, fontWeight: '500' },
   typeChipTextActive: { color: c.onColor },
+
+  walletNote: {
+    backgroundColor: c.chipBg, borderRadius: 12, padding: 12, marginBottom: 14,
+    borderWidth: 1, borderColor: c.cardBorder,
+  },
+  walletNoteText: { fontSize: 12, color: c.textMuted, lineHeight: 17 },
 
   submitBtn: {
     backgroundColor: c.primary, borderRadius: 14,

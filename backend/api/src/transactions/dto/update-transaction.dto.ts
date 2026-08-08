@@ -38,6 +38,10 @@ export class UpdateTransactionDto {
 
   @IsOptional()
   @IsString()
+  bankId?: string; // '' clears the bank
+
+  @IsOptional()
+  @IsString()
   @MaxLength(500) // prevent absurdly long notes
   description?: string;
 }

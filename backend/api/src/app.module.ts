@@ -31,6 +31,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { DocumentsModule } from './documents/documents.module';
 import { EventsModule } from './events/events.module';
 import { HabitsModule } from './habits/habits.module';
+import { BanksModule } from './banks/banks.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { HabitsModule } from './habits/habits.module';
     DocumentsModule,
     EventsModule,
     HabitsModule,
+    BanksModule,
   ],
   controllers: [AppController],
   providers: [

@@ -15,7 +15,7 @@ import AddSavingSheet, { type EditingSaving } from '@/components/AddSavingSheet'
 import AddGoalSheet from '@/components/AddGoalSheet';
 import ContributeGoalSheet from '@/components/ContributeGoalSheet';
 import AppAlert from '@/components/AppAlert';
-import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
+import TransactionPickerSheet, { type PickerTx } from '@/components/TransactionPickerSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -107,7 +107,7 @@ export default function SavingsScreen() {
   const [goalSheetOpen, setGoalSheetOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [contributingGoal, setContributingGoal] = useState<Goal | null>(null);
-  const [linkState, setLinkState] = useState<{ saving: Saving; matches: TxMatch[] } | null>(null);
+  const [sipPickerSaving, setSipPickerSaving] = useState<Saving | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -250,25 +250,11 @@ export default function SavingsScreen() {
     }
   }
 
+  // Opens the transaction picker so the user links this SIP/deposit to its bank
+  // debit (reclassified to INVESTMENT) — or skips to just record the top-up.
   function contributeSip(s: Saving) {
     if (!s.sipAmount) return;
-    // The monthly top-up isn't SIP-only — RDs and other instruments use it too.
-    const word = s.type === 'MUTUAL_FUNDS' ? 'SIP' : s.type === 'RECURRING_DEPOSIT' ? 'deposit' : 'contribution';
-    setAlertData({
-      title: `Add this month’s ${word}`,
-      message: `Add ${formatINR(s.sipAmount)} to "${s.name}"? We'll match it to your bank debit so it isn't counted as an expense too.`,
-      confirmLabel: 'Add',
-      onConfirm: async () => {
-        const token = await getToken();
-        // If several bank debits could be this contribution, ask which one.
-        const matches = await apiFetch<TxMatch[]>(`/savings/${s.id}/contribution-matches`, token!);
-        if (matches.length >= 2) {
-          setLinkState({ saving: s, matches });
-          return;
-        }
-        await doContribute(s);
-      },
-    });
+    setSipPickerSaving(s);
   }
 
   function deletePlatform(id: string, name: string) {
@@ -327,17 +313,18 @@ export default function SavingsScreen() {
         />
       )}
 
-      {linkState && (
-        <LinkTransactionSheet
+      {sipPickerSaving && (
+        <TransactionPickerSheet
           visible
-          title="Link this contribution"
-          subtitle={`${formatINR(linkState.saving.sipAmount ?? 0)} · ${linkState.saving.name}`}
-          matches={linkState.matches}
-          onClose={() => setLinkState(null)}
-          onPick={async (txId) => {
-            const saving = linkState.saving;
-            setLinkState(null);
-            await doContribute(saving, txId);
+          suggestAmount={sipPickerSaving.sipAmount ?? undefined}
+          type="DEBIT"
+          title="Add contribution — link a transaction"
+          subtitle={`${formatINR(sipPickerSaving.sipAmount ?? 0)} · ${sipPickerSaving.name}`}
+          onClose={() => setSipPickerSaving(null)}
+          onPick={async (tx: PickerTx | null) => {
+            const saving = sipPickerSaving;
+            setSipPickerSaving(null);
+            await doContribute(saving, tx?.id ?? null);
           }}
         />
       )}

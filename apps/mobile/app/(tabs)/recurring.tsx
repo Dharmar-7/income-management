@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
 import AddRecurringSheet from '@/components/AddRecurringSheet';
 import AppAlert from '@/components/AppAlert';
-import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
+import TransactionPickerSheet, { type PickerTx } from '@/components/TransactionPickerSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -79,7 +79,7 @@ export default function RecurringScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringItem | null>(null);
-  const [linkState, setLinkState] = useState<{ item: RecurringItem; matches: TxMatch[] } | null>(null);
+  const [payingItem, setPayingItem] = useState<RecurringItem | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string; icon?: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -121,22 +121,10 @@ export default function RecurringScreen() {
     showPayResult(res.linkResult);
   }
 
-  async function handlePay(item: RecurringItem) {
-    setAlertData({
-      title: 'Mark as Paid',
-      message: `Mark "${item.name}" (${formatINR(item.amount)}) as paid?\n\nWe'll match it to your bank transaction so it isn't counted twice.`,
-      icon: '✅',
-      confirmLabel: 'Mark Paid',
-      onConfirm: async () => {
-        const token = await getToken();
-        const matches = await apiFetch<TxMatch[]>(`/recurring/${item.id}/matches`, token!);
-        if (matches.length >= 2) {
-          setLinkState({ item, matches });
-          return;
-        }
-        await pay(item);
-      },
-    });
+  // Opens the transaction picker so the user links this bill to its bank debit
+  // (or skips to record it separately). Picking / skipping marks it paid.
+  function handlePay(item: RecurringItem) {
+    setPayingItem(item);
   }
 
   async function handleDelete(item: RecurringItem) {
@@ -254,17 +242,18 @@ export default function RecurringScreen() {
         />
       )}
 
-      {linkState && (
-        <LinkTransactionSheet
+      {payingItem && (
+        <TransactionPickerSheet
           visible
-          title="Link this bill"
-          subtitle={`${formatINR(linkState.item.amount)} · ${linkState.item.name}`}
-          matches={linkState.matches}
-          onClose={() => setLinkState(null)}
-          onPick={async (txId) => {
-            const item = linkState.item;
-            setLinkState(null);
-            await pay(item, txId);
+          suggestAmount={payingItem.amount}
+          type={payingItem.type}
+          title="Mark paid — link a transaction"
+          subtitle={`${formatINR(payingItem.amount)} · ${payingItem.name}`}
+          onClose={() => setPayingItem(null)}
+          onPick={async (tx: PickerTx | null) => {
+            const item = payingItem;
+            setPayingItem(null);
+            await pay(item, tx?.id ?? null);
           }}
         />
       )}

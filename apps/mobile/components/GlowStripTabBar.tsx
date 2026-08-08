@@ -104,7 +104,7 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
           {/* Crystal gem — centre tab */}
           <TouchableOpacity style={s.ti} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
             <View style={s.ic}>
-              {(gemActive || open) && <View style={[s.pill, dark ? s.pillDark : s.pillLight]} pointerEvents="none" />}
+              {(gemActive || open) && <View style={s.arc} pointerEvents="none" />}
               <View style={(gemActive || open) ? s.iconGrow : undefined}>
                 <VeloraGem size={20} />
               </View>
@@ -129,7 +129,7 @@ function TabItem({
   return (
     <TouchableOpacity style={s.ti} onPress={onPress} activeOpacity={0.7}>
       <View style={s.ic}>
-        {active && <View style={[s.pill, dark ? s.pillDark : s.pillLight]} pointerEvents="none" />}
+        {active && <View style={s.arc} pointerEvents="none" />}
         <Text style={[s.emoji, active && s.iconGrow]}>{icon}</Text>
       </View>
       <View style={[s.dot, active && s.dotActive]} />
@@ -167,28 +167,32 @@ const s = StyleSheet.create({
   },
   ic: {
     // Fixed icon box keeps the touch target/layout identical across states.
+    // NO overflow:hidden / borderRadius here — the active marker is the arc that
+    // floats just ABOVE this box, and overflow:hidden would clip it away.
     width: 50, height: 32,
-    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    // overflow:hidden forces Android to clip to the rounded outline every draw.
-    overflow: 'hidden',
   },
-  // Active tab = soft indigo pill tint (icon grows slightly). Rendered as a
-  // freshly-MOUNTED absolute layer per active tab — NOT a background toggled on
-  // a persistent view. On Android, adding a backgroundColor to an already-mounted
-  // rounded view skips the outline re-clip and paints a rectangle; mounting a new
-  // rounded view (radius 16 on a 32px box = fully rounded ends) always renders
-  // the pill correctly. Deliberately no shadow/elevation: Android draws elevation
-  // as a rectangular smudge around transparent views.
-  pill: {
+  // Active marker: a thin indigo arc curving over the icon. A View with only its
+  // top border + big top-corner radii renders as a curved line — the "curve"
+  // look. Conditionally MOUNTED so toggling it never shifts layout.
+  //
+  // CRUCIAL: no shadow / no elevation. On Android, elevation on an otherwise
+  // transparent view is painted as a rectangular grey smudge behind it — THAT
+  // was the "rectangle" that kept appearing. A flat colored curve has no such
+  // artifact, so the indicator stays a clean arc on every tab.
+  arc: {
     position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: 16,
+    top: -3,
+    alignSelf: 'center',
+    width: 26,
+    height: 9,
+    borderTopWidth: 3,
+    borderTopLeftRadius: 13,
+    borderTopRightRadius: 13,
+    borderTopColor: '#6366f1',
   },
-  pillDark:  { backgroundColor: 'rgba(99,102,241,0.18)' },
-  pillLight: { backgroundColor: 'rgba(99,102,241,0.14)' },
-  iconGrow: { transform: [{ scale: 1.18 }] },
+  iconGrow: { transform: [{ scale: 1.12 }] },
   emoji: { fontSize: 18 },
   dot: {
     width: 4, height: 4,

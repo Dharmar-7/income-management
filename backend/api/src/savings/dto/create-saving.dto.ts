@@ -49,4 +49,11 @@ export class CreateSavingDto {
   @IsOptional()
   @IsString()
   platformId?: string;
+
+  // For a standalone (no-platform) investment funded straight from the bank:
+  // the bank debit that paid for it. Reclassified to INVESTMENT so it isn't
+  // also counted as an expense. Ignored when platformId is set (wallet money).
+  @IsOptional()
+  @IsString()
+  transactionId?: string;
 }

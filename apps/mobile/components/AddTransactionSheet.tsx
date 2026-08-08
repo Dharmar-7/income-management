@@ -15,6 +15,7 @@ import { apiFetch } from '@/lib/api';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import AppAlert from '@/components/AppAlert';
 import DatePickerField from '@/components/DatePickerField';
+import BankPickerField from '@/components/BankPickerField';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -35,6 +36,7 @@ export interface EditingTransaction {
   type: TxType;
   description: string | null;
   category: { id: string } | null;
+  bank?: { id: string } | null;
 }
 
 interface Props {
@@ -64,6 +66,7 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
   const [amount, setAmount] = useState('');
   const [merchant, setMerchant] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [bankId, setBankId] = useState<string | null>(null);
   const [date, setDate] = useState(todayISO);
   const [description, setDescription] = useState('');
   const [showCategories, setShowCategories] = useState(false);
@@ -78,6 +81,7 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
       setAmount(String(editing.amount));
       setMerchant(editing.merchant);
       setCategoryId(editing.category?.id ?? '');
+      setBankId(editing.bank?.id ?? null);
       setDate(editing.date.slice(0, 10));
       setDescription(editing.description ?? '');
     } else {
@@ -91,6 +95,7 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
     setAmount('');
     setMerchant('');
     setCategoryId('');
+    setBankId(null);
     setDate(todayISO());
     setDescription('');
     setShowCategories(false);
@@ -131,6 +136,7 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
             type: txType,
             date,
             categoryId,
+            bankId: bankId ?? '',
             description: description.trim(),
           }),
         });
@@ -143,6 +149,7 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
             type: txType,
             date,
             categoryId: categoryId || undefined,
+            bankId: bankId || undefined,
             description: description.trim() || undefined,
           }),
         });
@@ -301,6 +308,14 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
                 </View>
               )}
             </View>
+
+            {/* Bank */}
+            <BankPickerField
+              label="Bank"
+              value={bankId}
+              onChange={setBankId}
+              autoDefaultLastUsed={!isEdit}
+            />
 
             {/* Date */}
             <View style={styles.field}>

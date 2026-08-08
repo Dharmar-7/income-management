@@ -101,12 +101,11 @@ describe('SavingsService.contribute', () => {
     await expect(service.contribute('clerk-1', 'missing')).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('auto-links a single matching bank debit and reclassifies it to INVESTMENT', async () => {
-    // one candidate DEBIT of the same amount → unambiguous auto-link
-    const match = { id: 'tx1', amount: 100, merchant: 'Groww', date: new Date(), type: 'DEBIT' };
-    const { service, prisma } = await buildService({ ...baseSaving }, undefined, [match]);
+  it('links and reclassifies the transaction the user picked', async () => {
+    const picked = { id: 'tx1', amount: 100, merchant: 'Groww', date: new Date(), type: 'DEBIT' };
+    const { service, prisma } = await buildService({ ...baseSaving }, undefined, [picked]);
 
-    const res = await service.contribute('clerk-1', 's1');
+    const res = await service.contribute('clerk-1', 's1', undefined, 'tx1');
 
     // records the contribution with the linked tx
     expect(prisma.savingContribution.create).toHaveBeenCalledWith(
@@ -119,13 +118,12 @@ describe('SavingsService.contribute', () => {
     expect(res.linkResult).toEqual({ transactionId: 'tx1', reclassified: true });
   });
 
-  it('does NOT auto-link when two candidates are ambiguous', async () => {
-    const m1 = { id: 'tx1', amount: 100, merchant: 'Groww', date: new Date(), type: 'DEBIT' };
-    const m2 = { id: 'tx2', amount: 100, merchant: 'Zerodha', date: new Date(), type: 'DEBIT' };
-    const { service, prisma } = await buildService({ ...baseSaving }, undefined, [m1, m2]);
+  it('records without linking when no transaction is picked (manual model)', async () => {
+    const { service, prisma } = await buildService({ ...baseSaving });
 
     const res = await service.contribute('clerk-1', 's1');
 
+    // no silent auto-linking — the debit is only reclassified when explicitly picked
     expect(prisma.transaction.update).not.toHaveBeenCalled();
     expect(res.linkResult).toEqual({ transactionId: null, reclassified: false });
   });

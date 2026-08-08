@@ -28,6 +28,11 @@ export class CreateTransactionDto {
   @IsString()
   categoryId?: string;
 
+  // Which bank this transaction belongs to (colour-coded in the list).
+  @IsOptional()
+  @IsString()
+  bankId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(500)

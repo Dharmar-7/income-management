@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLoanDto } from './dto/create-loan.dto';
-import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
+import { findTransactionMatches } from '../common/transaction-match';
 
 function computeEmi(principal: number, annualRate: number, tenure: number): number {
   if (annualRate === 0) return +(principal / tenure).toFixed(2);
@@ -116,33 +116,27 @@ export class LoansService {
     let autoCreated = false;
 
     if (opts?.transactionId) {
+      // User explicitly linked a bank transaction from the picker.
       const tx = await this.prisma.transaction.findFirst({
         where: { id: opts.transactionId, userId },
       });
       if (!tx) throw new NotFoundException('Transaction to link not found.');
       linkedTxId = tx.id;
     } else {
-      const matches = await findTransactionMatches(this.prisma, userId, {
-        amount: loan.emiAmount, type: 'DEBIT', aroundDate: new Date(), windowDays: 7,
+      // No link chosen → record a fresh mirror debit (cash / not imported).
+      const created = await this.prisma.transaction.create({
+        data: {
+          userId,
+          amount: loan.emiAmount,
+          merchant: loan.lender,
+          description: `EMI: ${loan.name}`,
+          date: new Date(),
+          type: 'DEBIT',
+          source: 'MANUAL',
+        },
       });
-      const auto = pickAutoLink(matches);
-      if (auto) {
-        linkedTxId = auto.id; // exactly one bank match → link, no duplicate
-      } else {
-        const created = await this.prisma.transaction.create({
-          data: {
-            userId,
-            amount: loan.emiAmount,
-            merchant: loan.lender,
-            description: `EMI: ${loan.name}`,
-            date: new Date(),
-            type: 'DEBIT',
-            source: 'MANUAL',
-          },
-        });
-        linkedTxId = created.id;
-        autoCreated = true;
-      }
+      linkedTxId = created.id;
+      autoCreated = true;
     }
 
     const newPaidEmis = paidEmis + 1;

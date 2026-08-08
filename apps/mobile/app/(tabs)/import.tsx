@@ -271,14 +271,14 @@ export default function ImportScreen() {
   }
 
   // ── Bank statement: commit the reviewed rows ───────────────────────────────
-  async function handleCommitStatement(chosen: CommitRow[]) {
+  async function handleCommitStatement(chosen: CommitRow[], bankId: string | null) {
     try {
       setStmtStatus('committing');
       const token = await getToken();
       const res = await fetch(`${API_URL}/import/statement/commit`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactions: chosen }),
+        body: JSON.stringify({ transactions: chosen, bankId: bankId || undefined }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ message: 'Import failed' }));

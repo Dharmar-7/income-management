@@ -17,6 +17,15 @@ import AddTransactionSheet, { type EditingTransaction } from '@/components/AddTr
 import AppAlert from '@/components/AppAlert';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
+import { habitColor } from '@/lib/habitColors';
+
+interface BankStat {
+  id: string;
+  name: string;
+  color: string;
+  transactionCount: number;
+  lastTransactionAt: string | null;
+}
 
 // ─── Debounce hook — same concept as the web app ─────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
@@ -37,6 +46,7 @@ interface Transaction {
   source: 'TAKEOUT' | 'GMAIL' | 'MANUAL' | 'SMS';
   description: string | null;
   category: { id: string; name: string; icon: string } | null;
+  bank: { id: string; name: string; color: string } | null;
 }
 
 interface TransactionsResponse {
@@ -94,6 +104,7 @@ export default function TransactionsScreen() {
       type: tx.type,
       description: tx.description,
       category: tx.category ? { id: tx.category.id } : null,
+      bank: tx.bank ? { id: tx.bank.id } : null,
     });
     setShowSheet(true);
   }
@@ -152,6 +163,21 @@ export default function TransactionsScreen() {
     },
     staleTime: 10 * 60 * 1000,
   });
+
+  // Banks — shown as a colour-coded strip with each bank's last-activity date.
+  const { data: banks } = useQuery({
+    queryKey: ['banks'],
+    queryFn: async () => {
+      const token = await getToken();
+      return apiFetch<BankStat[]>('/banks', token!);
+    },
+    staleTime: 2 * 60 * 1000,
+  });
+
+  function bankLastLabel(iso: string | null) {
+    if (!iso) return 'none yet';
+    return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -213,6 +239,29 @@ export default function TransactionsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Banks strip — colour + last-activity date per bank */}
+      {banks && banks.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.bankStrip}
+          contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
+        >
+          {banks.map(b => {
+            const col = habitColor(b.color);
+            return (
+              <View key={b.id} style={[styles.bankChip, { borderColor: col.base }]}>
+                <View style={[styles.bankChipDot, { backgroundColor: col.base }]} />
+                <View>
+                  <Text style={styles.bankChipName}>{b.name}</Text>
+                  <Text style={styles.bankChipMeta}>last {bankLastLabel(b.lastTransactionAt)} · {b.transactionCount}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
+
       {/* Total count */}
       {data && (
         <Text style={styles.countText}>
@@ -230,6 +279,9 @@ export default function TransactionsScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item: tx }) => (
             <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => openEdit(tx)}>
+              {tx.bank && (
+                <View style={[styles.bankStripe, { backgroundColor: habitColor(tx.bank.color).base }]} />
+              )}
               <View style={[styles.iconBox,
                 tx.type === 'CREDIT' ? styles.iconBoxCredit
                 : tx.type === 'REFUND' ? styles.iconBoxRefund
@@ -382,7 +434,21 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: c.card, borderRadius: 14, padding: 14, marginBottom: 8, gap: 12,
     shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4, shadowOffset: { width: 0, height: 1 },
+    overflow: 'hidden', // so the bank stripe follows the rounded corners
   },
+  // Left colour stripe = which bank this transaction came from.
+  bankStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
+
+  // Banks strip above the list.
+  bankStrip: { marginBottom: 10, flexGrow: 0 },
+  bankChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
+    backgroundColor: c.card,
+  },
+  bankChipDot: { width: 12, height: 12, borderRadius: 6 },
+  bankChipName: { fontSize: 13, fontWeight: '700', color: c.text },
+  bankChipMeta: { fontSize: 10, color: c.textFaint, marginTop: 1 },
   iconBox: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   iconBoxDebit: { backgroundColor: '#fef2f2' },
   iconBoxCredit: { backgroundColor: '#f0fdf4' },

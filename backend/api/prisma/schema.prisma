@@ -51,6 +51,7 @@ model User {
   events                Event[]
   habits                Habit[]
   habitCheckins         HabitCheckin[]
+  banks                 Bank[]
 }
 
 // ─────────────────────────────────────────
@@ -89,10 +90,12 @@ model Transaction {
   // Foreign keys
   userId      String
   categoryId  String?                        // nullable — may not be categorized yet
+  bankId      String?                        // which bank this came from (colour-coded)
 
   // Relations
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category    Category? @relation(fields: [categoryId], references: [id])
+  bank        Bank?     @relation(fields: [bankId], references: [id], onDelete: SetNull)
 
   // Prevent duplicate imports: same user, merchant, amount, and date = duplicate
   @@unique([userId, merchant, amount, date])
@@ -104,6 +107,27 @@ model Transaction {
   @@index([userId, date])
   @@index([userId, type, date])
   @@index([userId, categoryId, date])
+  @@index([userId, bankId, date])
+}
+
+// ─────────────────────────────────────────
+// BANK
+// A user's bank account, colour-coded so transactions can be grouped/scanned
+// visually by which bank they came from (e.g. IOB = teal, TMB = orange).
+// ─────────────────────────────────────────
+model Bank {
+  id        String   @id @default(uuid())
+  name      String                          // e.g. "IOB", "TMB"
+  color     String   @default("indigo")     // palette key — teal/indigo/orange/…
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@unique([userId, name])
+  @@index([userId])
 }
 
 // ─────────────────────────────────────────

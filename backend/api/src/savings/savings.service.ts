@@ -4,7 +4,7 @@ import { CreatePlatformDto } from './dto/create-platform.dto';
 import { UpdatePlatformDto } from './dto/update-platform.dto';
 import { CreateSavingDto } from './dto/create-saving.dto';
 import { UpdateSavingDto } from './dto/update-saving.dto';
-import { findTransactionMatches, pickAutoLink } from '../common/transaction-match';
+import { findTransactionMatches } from '../common/transaction-match';
 
 @Injectable()
 export class SavingsService {
@@ -14,14 +14,30 @@ export class SavingsService {
     return this.prisma.resolveUserId(clerkId);
   }
 
+  // Mark a bank debit that funded an investment (wallet top-up / direct buy) as
+  // INVESTMENT, so it drops out of monthly expenses. Verifies ownership.
+  private async reclassifyToInvestment(userId: string, txId: string) {
+    const tx = await this.prisma.transaction.findFirst({ where: { id: txId, userId } });
+    if (!tx) throw new NotFoundException('Transaction to link not found.');
+    if (tx.type !== 'INVESTMENT') {
+      await this.prisma.transaction.update({
+        where: { id: txId },
+        data: { type: 'INVESTMENT' as any },
+      });
+    }
+  }
+
   // ─── Platform (wallet) ────────────────────────────────────────────────────
 
   async createPlatform(clerkId: string, dto: CreatePlatformDto) {
     const userId = await this.resolveUserId(clerkId);
     try {
-      return await this.prisma.investmentPlatform.create({
+      const platform = await this.prisma.investmentPlatform.create({
         data: { userId, name: dto.name.trim(), totalAdded: dto.totalAdded, note: dto.note?.trim() || null },
       });
+      // Money bank → wallet: the funding debit isn't an expense, it's an investment.
+      if (dto.transactionId) await this.reclassifyToInvestment(userId, dto.transactionId);
+      return platform;
     } catch (e: any) {
       if (e?.code === 'P2002') throw new ConflictException(`Platform "${dto.name}" already exists.`);
       throw e;
@@ -60,13 +76,16 @@ export class SavingsService {
       }
     }
 
-    return this.prisma.investmentPlatform.update({
+    const updated = await this.prisma.investmentPlatform.update({
       where: { id: platformId },
       data: {
         ...(dto.totalAdded !== undefined && { totalAdded: dto.totalAdded }),
         ...(dto.note !== undefined && { note: dto.note?.trim() || null }),
       },
     });
+    // A top-up (money bank → wallet) can map to the funding debit → INVESTMENT.
+    if (dto.transactionId) await this.reclassifyToInvestment(userId, dto.transactionId);
+    return updated;
   }
 
   async removePlatform(clerkId: string, platformId: string) {
@@ -101,7 +120,7 @@ export class SavingsService {
       }
     }
 
-    return this.prisma.saving.create({
+    const saving = await this.prisma.saving.create({
       data: {
         userId,
         platformId: dto.platformId || null,
@@ -118,6 +137,14 @@ export class SavingsService {
       },
       include: { platform: true },
     });
+
+    // Standalone (no wallet) investment funded straight from the bank → map its
+    // debit to INVESTMENT. Wallet-funded buys carry no bank tx (money already
+    // left the bank at top-up), so the link is ignored there.
+    if (dto.transactionId && !dto.platformId) {
+      await this.reclassifyToInvestment(userId, dto.transactionId);
+    }
+    return saving;
   }
 
   async getSavings(clerkId: string) {
@@ -239,18 +266,12 @@ export class SavingsService {
       }
     }
 
-    // Resolve the bank transaction this contribution maps to (if any).
+    // Link only the bank transaction the user explicitly picked (if any).
     let linkedTxId: string | null = null;
     if (transactionId) {
       const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, userId } });
       if (!tx) throw new NotFoundException('Transaction to link not found.');
       linkedTxId = tx.id;
-    } else {
-      const matches = await findTransactionMatches(this.prisma, userId, {
-        amount: amt, type: 'DEBIT', aroundDate: new Date(), windowDays: 7,
-      });
-      const auto = pickAutoLink(matches);
-      if (auto) linkedTxId = auto.id;
     }
 
     // A fresh contribution is worth what you put in (no gain/loss yet), so bump

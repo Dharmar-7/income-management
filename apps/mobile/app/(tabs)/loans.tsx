@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiFetch } from '@/lib/api';
 import AddLoanSheet from '@/components/AddLoanSheet';
 import AppAlert from '@/components/AppAlert';
-import LinkTransactionSheet, { type TxMatch } from '@/components/LinkTransactionSheet';
+import TransactionPickerSheet, { type PickerTx } from '@/components/TransactionPickerSheet';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 
@@ -77,7 +77,7 @@ export default function LoansScreen() {
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<LoanItem | null>(null);
-  const [linkState, setLinkState] = useState<{ loan: LoanItem; matches: TxMatch[] } | null>(null);
+  const [payingLoan, setPayingLoan] = useState<LoanItem | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string; icon?: string;
     confirmLabel?: string; confirmDestructive?: boolean;
@@ -120,24 +120,10 @@ export default function LoansScreen() {
     showPayResult(res.linkResult);
   }
 
-  async function handlePayEmi(loan: LoanItem) {
-    setAlertData({
-      title: 'Pay EMI',
-      message: `Pay EMI of ${formatINR(loan.emiAmount)} for "${loan.name}"?\n\nWe'll match it to your bank transaction so it isn't counted twice.`,
-      icon: '💳',
-      confirmLabel: 'Pay EMI',
-      onConfirm: async () => {
-        const token = await getToken();
-        // If several bank transactions could be this EMI, ask which one.
-        const matches = await apiFetch<TxMatch[]>(`/loans/${loan.id}/payment-matches`, token!);
-        if (matches.length >= 2) {
-          setLinkState({ loan, matches });
-          return;
-        }
-        // 0 or 1 → backend auto-links the single match or records a new one.
-        await payEmi(loan);
-      },
-    });
+  // Opens the transaction picker so the user links this EMI to its bank debit
+  // (or skips to record it separately). Picking / skipping completes the payment.
+  function handlePayEmi(loan: LoanItem) {
+    setPayingLoan(loan);
   }
 
   async function handleDelete(loan: LoanItem) {
@@ -284,17 +270,18 @@ export default function LoansScreen() {
         />
       )}
 
-      {linkState && (
-        <LinkTransactionSheet
+      {payingLoan && (
+        <TransactionPickerSheet
           visible
-          title="Link this EMI"
-          subtitle={`${formatINR(linkState.loan.emiAmount)} · ${linkState.loan.name}`}
-          matches={linkState.matches}
-          onClose={() => setLinkState(null)}
-          onPick={async (txId) => {
-            const loan = linkState.loan;
-            setLinkState(null);
-            await payEmi(loan, txId);
+          suggestAmount={payingLoan.emiAmount}
+          type="DEBIT"
+          title="Pay EMI — link a transaction"
+          subtitle={`${formatINR(payingLoan.emiAmount)} · ${payingLoan.name}`}
+          onClose={() => setPayingLoan(null)}
+          onPick={async (tx: PickerTx | null) => {
+            const loan = payingLoan;
+            setPayingLoan(null);
+            await payEmi(loan, tx?.id ?? null);
           }}
         />
       )}
