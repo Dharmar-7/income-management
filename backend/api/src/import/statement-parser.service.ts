@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { TransactionType } from '@prisma/client';
+import { StatementPasswordException } from './statement-password.exception';
 
 // pdf-parse v2 dropped v1's default-function export in favour of a PDFParse class
 // (require('pdf-parse')() throws "pdfParse is not a function"). We require + destructure
@@ -65,9 +66,9 @@ export class StatementParserService {
   // or the instance OOMs / the gateway kills the request at ~100 s.
   private readonly MAX_OCR_PAGES = 6;
 
-  async parse(buffer: Buffer, mimetype: string): Promise<ParsedStatementTxn[]> {
+  async parse(buffer: Buffer, mimetype: string, password?: string): Promise<ParsedStatementTxn[]> {
     this.logger.log(`Statement upload: ${mimetype}, ${(buffer.length / 1024).toFixed(0)} KB`);
-    const text = await this.extractText(buffer, mimetype);
+    const text = await this.extractText(buffer, mimetype, password);
     if (!text || text.replace(/\s/g, '').length < 20) {
       throw new BadRequestException(
         'Could not read any text from the file. If this is a scanned PDF, upload a clear photo/screenshot of the statement instead.',
@@ -90,12 +91,33 @@ export class StatementParserService {
     return rows;
   }
 
+  // Recognise pdf.js's PasswordException (surfaced through pdf-parse) so an
+  // encrypted PDF becomes a "please enter the password" prompt, not a failure.
+  // pdf.js codes: 1 = NEED_PASSWORD (none/blank given), 2 = INCORRECT_PASSWORD.
+  private passwordErrorKind(err: unknown): 'required' | 'incorrect' | null {
+    const e = err as { name?: string; code?: number; message?: string };
+    const msg = String(e?.message ?? '').toLowerCase();
+    if (e?.name === 'PasswordException' || msg.includes('password')) {
+      return e?.code === 2 || msg.includes('incorrect') ? 'incorrect' : 'required';
+    }
+    return null;
+  }
+
   // ── text extraction ──────────────────────────────────────────────────────────
-  private async extractText(buffer: Buffer, mimetype: string): Promise<string> {
+  private async extractText(buffer: Buffer, mimetype: string, password?: string): Promise<string> {
     if (mimetype === 'application/pdf') {
-      const parser = new PDFParse({ data: buffer });
+      // Passing an empty-string password makes pdf.js report "incorrect" instead
+      // of "needs password", so only include it when the user actually gave one.
+      const parser = new PDFParse({ data: buffer, ...(password ? { password } : {}) });
       try {
-        const res = await parser.getText();
+        let res;
+        try {
+          res = await parser.getText();
+        } catch (err) {
+          const kind = this.passwordErrorKind(err);
+          if (kind) throw new StatementPasswordException(kind === 'incorrect');
+          throw err;
+        }
         const text = res.text;
         const totalPages = res.total ?? 0;
         // pdf-parse emits a "-- N of M --" marker per page even when the page has
@@ -125,12 +147,21 @@ export class StatementParserService {
             `PDF has ${totalPages} pages; OCR limited to the first ${this.MAX_OCR_PAGES} to stay within server limits.`,
           );
         }
-        const shot = await parser.getScreenshot({
-          desiredWidth: 1500,
-          imageBuffer: true,
-          imageDataUrl: false,
-          ...(totalPages > this.MAX_OCR_PAGES ? { first: this.MAX_OCR_PAGES } : {}),
-        });
+        let shot;
+        try {
+          shot = await parser.getScreenshot({
+            desiredWidth: 1500,
+            imageBuffer: true,
+            imageDataUrl: false,
+            ...(totalPages > this.MAX_OCR_PAGES ? { first: this.MAX_OCR_PAGES } : {}),
+          });
+        } catch (err) {
+          // Safety net: some builds surface the encryption error at render time
+          // rather than at getText(), so translate it here too.
+          const kind = this.passwordErrorKind(err);
+          if (kind) throw new StatementPasswordException(kind === 'incorrect');
+          throw err;
+        }
         return this.ocrAll(shot.pages.map((p) => Buffer.from(p.data)));
       } finally {
         await parser.destroy().catch(() => {});
@@ -327,8 +358,12 @@ export class StatementParserService {
       `Statement parse: ${lines.length} lines, ${dateLines} date-lines, ${txns.length} transactions extracted.`,
     );
     if (txns.length === 0 && lines.length > 0) {
-      const sample = lines.slice(0, 6).map((l) => l.slice(0, 90)).join('  ⏐  ');
-      this.logger.warn(`No transactions parsed. First lines read: ${sample}`);
+      // Never log the raw statement text — it's financial PII (names, balances,
+      // account/transaction details). Log only structural signal for debugging.
+      const lengths = lines.slice(0, 6).map((l) => l.length).join(',');
+      this.logger.warn(
+        `No transactions parsed from ${lines.length} lines (first line lengths: ${lengths}).`,
+      );
     }
 
     return txns;

@@ -32,6 +32,7 @@ import { DocumentsModule } from './documents/documents.module';
 import { EventsModule } from './events/events.module';
 import { HabitsModule } from './habits/habits.module';
 import { BanksModule } from './banks/banks.module';
+import { SafeToSpendModule } from './safe-to-spend/safe-to-spend.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { BanksModule } from './banks/banks.module';
     EventsModule,
     HabitsModule,
     BanksModule,
+    SafeToSpendModule,
   ],
   controllers: [AppController],
   providers: [

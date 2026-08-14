@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   ActivityIndicator, Platform, PermissionsAndroid,
+  Modal, TextInput,
 } from 'react-native';
 import { useAuth } from '@clerk/clerk-expo';
 import * as DocumentPicker from 'expo-document-picker';
@@ -52,6 +53,14 @@ export default function ImportScreen() {
   const [stmtCats, setStmtCats] = useState<{ id: string; name: string; icon: string }[]>([]);
   const [stmtResult, setStmtResult] = useState<ImportResult | null>(null);
   const [stmtError, setStmtError] = useState<string | null>(null);
+
+  // Password-protected PDFs: remember the picked file so we can retry with a
+  // password once the backend tells us the statement is encrypted.
+  const [pendingFile, setPendingFile] = useState<{ uri: string; name: string; mime: string } | null>(null);
+  const [pwPrompt, setPwPrompt] = useState(false);
+  const [pwValue, setPwValue] = useState('');
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSubmitting, setPwSubmitting] = useState(false);
 
   // ── SMS sync state ────────────────────────────────────────────────────────
   const [smsStatus, setSmsStatus] = useState<SmsSyncStatus>('idle');
@@ -230,43 +239,92 @@ export default function ImportScreen() {
         return;
       }
 
-      setStmtStatus('parsing');
-      setStmtError(null);
-      setStmtResult(null);
-
-      const token = await getToken();
       const mime =
         file.mimeType ??
         (file.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      const picked = { uri: file.uri, name: file.name ?? 'statement', mime };
 
-      const formData = new FormData();
-      formData.append('file', { uri: file.uri, name: file.name ?? 'statement', type: mime } as unknown as Blob);
+      setPendingFile(picked);
+      setPwValue('');
+      setPwError(null);
+      setStmtError(null);
+      setStmtResult(null);
+      setStmtStatus('parsing');
 
-      // Parse the statement and load categories (for the review picker) together.
-      const [parseRes, catsRes] = await Promise.all([
-        fetch(`${API_URL}/import/statement/parse`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: formData,
-        }),
-        fetch(`${API_URL}/transactions/categories`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
-
-      if (!parseRes.ok) {
-        const err = await parseRes.json().catch(() => ({ message: 'Could not read the statement.' }));
-        throw new Error(err.message ?? 'Could not read the statement.');
-      }
-
-      const data: { transactions: ParsedRow[] } = await parseRes.json();
-      const cats = catsRes.ok ? await catsRes.json() : [];
-      setStmtRows(data.transactions ?? []);
-      setStmtCats(cats);
-      setStmtStatus('review');
+      await runParseStatement(picked, undefined);
     } catch (err) {
+      setPwPrompt(false);
       setStmtError(err instanceof Error ? err.message : 'Something went wrong.');
       setStmtStatus('error');
+    }
+  }
+
+  // Shared parse call — used on first pick and on each password retry. Returns
+  // rows for review, or opens the password prompt if the PDF is encrypted.
+  async function runParseStatement(
+    file: { uri: string; name: string; mime: string },
+    password: string | undefined,
+  ) {
+    const token = await getToken();
+
+    const formData = new FormData();
+    formData.append('file', { uri: file.uri, name: file.name, type: file.mime } as unknown as Blob);
+    if (password) formData.append('password', password);
+
+    const parseRes = await fetch(`${API_URL}/import/statement/parse`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+
+    // 422 with needsPassword → ask the user for the PDF password and retry.
+    if (parseRes.status === 422) {
+      const err = await parseRes.json().catch(() => ({}));
+      if (err?.needsPassword) {
+        setPwError(err.code === 'PASSWORD_INCORRECT' ? (err.message ?? 'Incorrect password.') : null);
+        setPwPrompt(true);
+        setStmtStatus('idle'); // the prompt overlays; keep the card neutral behind it
+        return;
+      }
+    }
+
+    if (!parseRes.ok) {
+      const err = await parseRes.json().catch(() => ({ message: 'Could not read the statement.' }));
+      throw new Error(err.message ?? 'Could not read the statement.');
+    }
+
+    const data: { transactions: ParsedRow[] } = await parseRes.json();
+
+    // Load categories for the review picker (only once).
+    let cats = stmtCats;
+    if (cats.length === 0) {
+      const catsRes = await fetch(`${API_URL}/transactions/categories`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      cats = catsRes.ok ? await catsRes.json() : [];
+      setStmtCats(cats);
+    }
+
+    setStmtRows(data.transactions ?? []);
+    setPwPrompt(false);
+    setPwValue('');
+    setPwError(null);
+    setStmtStatus('review');
+  }
+
+  // User submitted the PDF password → retry the parse with it.
+  async function submitPassword() {
+    if (!pendingFile || !pwValue.trim() || pwSubmitting) return;
+    setPwSubmitting(true);
+    setPwError(null);
+    try {
+      await runParseStatement(pendingFile, pwValue.trim());
+    } catch (err) {
+      setPwPrompt(false);
+      setStmtError(err instanceof Error ? err.message : 'Something went wrong.');
+      setStmtStatus('error');
+    } finally {
+      setPwSubmitting(false);
     }
   }
 
@@ -397,6 +455,7 @@ export default function ImportScreen() {
           <View style={{ backgroundColor: c.inputBg, borderRadius: 12, padding: 12, marginBottom: 16, gap: 4 }}>
             <Text style={{ fontSize: 12, color: c.textMuted }}>📄 Text PDFs are read directly</Text>
             <Text style={{ fontSize: 12, color: c.textMuted }}>📷 Photos/screenshots are read on-server (free OCR)</Text>
+            <Text style={{ fontSize: 12, color: c.textMuted }}>🔒 Password-protected PDF? We&apos;ll ask for the password</Text>
             <Text style={{ fontSize: 12, color: c.textMuted }}>✅ You review &amp; fix rows before anything is saved</Text>
           </View>
 
@@ -438,7 +497,7 @@ export default function ImportScreen() {
                 <StatBadge value={stmtResult.failed} label="Failed" bg="#fee2e2" text="#b91c1c" />
               </View>
               <TouchableOpacity
-                onPress={() => { setStmtStatus('idle'); setStmtResult(null); setStmtRows([]); }}
+                onPress={() => { setStmtStatus('idle'); setStmtResult(null); setStmtRows([]); setPendingFile(null); }}
                 style={{ borderWidth: 1, borderColor: c.inputBorder, borderRadius: 100, paddingVertical: 12, alignItems: 'center' }}
               >
                 <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>Import Another Statement</Text>
@@ -451,7 +510,7 @@ export default function ImportScreen() {
               <Text style={{ fontSize: 32, marginBottom: 8 }}>❌</Text>
               <Text style={{ color: c.danger, fontSize: 13, marginBottom: 16, textAlign: 'center' }}>{stmtError}</Text>
               <TouchableOpacity
-                onPress={() => { setStmtStatus('idle'); setStmtError(null); }}
+                onPress={() => { setStmtStatus('idle'); setStmtError(null); setPendingFile(null); }}
                 style={{ backgroundColor: c.primary, borderRadius: 100, paddingHorizontal: 24, paddingVertical: 10 }}
               >
                 <Text style={{ color: c.onColor, fontWeight: '600' }}>Try Again</Text>
@@ -597,6 +656,69 @@ export default function ImportScreen() {
           onConfirm={() => addAtmCash(atmEntry)}
         />
       )}
+
+      {/* Password prompt for encrypted statement PDFs */}
+      <Modal
+        visible={pwPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => { if (!pwSubmitting) { setPwPrompt(false); setStmtStatus('idle'); setPendingFile(null); } }}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', paddingHorizontal: 28 }}>
+          <View style={{ backgroundColor: c.card, borderRadius: 20, padding: 20 }}>
+            <Text style={{ fontSize: 34, textAlign: 'center', marginBottom: 6 }}>🔒</Text>
+            <Text style={{ fontSize: 17, fontWeight: '800', color: c.text, textAlign: 'center' }}>
+              Password-protected PDF
+            </Text>
+            <Text style={{ fontSize: 13, color: c.textMuted, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+              {pendingFile?.name ? `“${pendingFile.name}” is locked. ` : ''}Enter the password used to open this statement.
+            </Text>
+
+            <TextInput
+              value={pwValue}
+              onChangeText={setPwValue}
+              placeholder="Statement password"
+              placeholderTextColor={c.textFaint}
+              secureTextEntry
+              autoFocus
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={submitPassword}
+              style={{
+                borderWidth: 1, borderColor: pwError ? c.danger : c.inputBorder, borderRadius: 12,
+                paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: c.text, marginTop: 16,
+              }}
+            />
+            {pwError ? <Text style={{ color: c.danger, fontSize: 12, marginTop: 6 }}>{pwError}</Text> : null}
+
+            <Text style={{ fontSize: 11, color: c.textFaint, marginTop: 8, lineHeight: 15 }}>
+              💡 Bank PDFs are often locked with your PAN, account number, or date of birth — check the email it came in.
+            </Text>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 18 }}>
+              <TouchableOpacity
+                onPress={() => { setPwPrompt(false); setPwValue(''); setPwError(null); setStmtStatus('idle'); setPendingFile(null); }}
+                disabled={pwSubmitting}
+                style={{ flex: 1, borderWidth: 1, borderColor: c.inputBorder, borderRadius: 100, paddingVertical: 12, alignItems: 'center' }}
+              >
+                <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={submitPassword}
+                disabled={pwSubmitting || !pwValue.trim()}
+                style={{
+                  flex: 1, backgroundColor: c.primary, borderRadius: 100, paddingVertical: 12, alignItems: 'center',
+                  opacity: pwSubmitting || !pwValue.trim() ? 0.6 : 1,
+                }}
+              >
+                {pwSubmitting
+                  ? <ActivityIndicator color={c.onColor} />
+                  : <Text style={{ color: c.onColor, fontWeight: '700', fontSize: 14 }}>Unlock</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

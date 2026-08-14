@@ -33,6 +33,16 @@ function leaf(cx, cy, rot, scale, gid) {
   </g>`;
 }
 
+// Solid-white leaf, no gradient/veins — for the Android notification icon, where
+// only the alpha silhouette survives (colour is discarded by the OS). `mirror`
+// flips it horizontally so a left+right pair is truly symmetric.
+function whiteLeaf(cx, cy, rot, scale, mirror = false) {
+  const sx = mirror ? -scale : scale;
+  return `<g transform="translate(${cx} ${cy}) rotate(${rot}) scale(${sx} ${scale})">
+    <path d="M0 0 C -18 -10,-26 -34,-16 -52 C 4 -42,12 -18,0 0 Z" fill="#ffffff"/>
+  </g>`;
+}
+
 // The mark, authored in a 200×200 space, then re-centred so its visual middle
 // sits at (100,100) for clean placement in any canvas.
 function leafMark(u, withShadow) {
@@ -69,6 +79,16 @@ function transparentSVG(S, s) {
 </svg>`;
 }
 
+// Android notification small-icon: a bold white "V of two leaves" on a fully
+// transparent background, padded to stay inside the 24dp status-bar safe zone.
+// Must be white-only — Android tints the silhouette with the notification colour.
+function notificationSVG(S) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${S}" height="${S}" viewBox="0 0 200 200">
+  ${whiteLeaf(100, 145, -25, 1.9)}
+  ${whiteLeaf(100, 145, 25, 1.9, true)}
+</svg>`;
+}
+
 function splashSVG(W, H) {
   const k = (Math.min(W, H) * 0.46) / 200;
   const tx = (W / 2 - 100 * k).toFixed(2);
@@ -88,5 +108,6 @@ await render(iconSVG(1024, 0.86, true), 1024, 1024, 'icon.png');
 await render(iconSVG(1024, 0.70, false), 1024, 1024, 'adaptive-icon.png');  // smaller for Android safe zone
 await render(splashSVG(1284, 2778), 1284, 2778, 'splash.png');
 await render(transparentSVG(512, 1.06), 512, 512, 'logo-wheel.png');         // transparent, in-app
+await render(notificationSVG(96), 96, 96, 'notification-icon.png');          // white silhouette, Android notifications
 
 console.log('\nDone. Rebuild the app to see the new icon (icons are baked into the native build).');

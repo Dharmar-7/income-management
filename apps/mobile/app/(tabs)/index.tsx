@@ -14,6 +14,8 @@ import { useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import CashSheet from '@/components/CashSheet';
 import EventsTicker from '@/components/EventsTicker';
+import SafeToSpendCard from '@/components/SafeToSpendCard';
+import HabitsTodayCard from '@/components/HabitsTodayCard';
 import Celebration from '@/components/Celebration';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
@@ -123,6 +125,7 @@ export default function DashboardScreen() {
 
   function handleRefresh() {
     dashQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ['safe-to-spend'] });
   }
 
   return (
@@ -137,6 +140,7 @@ export default function DashboardScreen() {
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['dashboard'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] }); // cash payments mirror into transactions
+            queryClient.invalidateQueries({ queryKey: ['safe-to-spend'] }); // spending changes today's number
           }}
         />
       )}
@@ -166,6 +170,18 @@ export default function DashboardScreen() {
 
         {/* Occasions running ticker */}
         <EventsTicker />
+
+        {/* ═══ TODAY ═══ */}
+        <SectionHeader icon="🟢" label="Today" c={c} />
+
+        {/* Safe to Spend — the daily "how much can I spend?" number */}
+        <SafeToSpendCard />
+
+        {/* Today's habits — quick check-off */}
+        <HabitsTodayCard />
+
+        {/* ═══ MONEY ═══ */}
+        <SectionHeader icon="💰" label="Money" c={c} />
 
         {/* Summary cards */}
         {isLoading ? (
@@ -205,31 +221,6 @@ export default function DashboardScreen() {
           </>
         ) : null}
 
-        {/* Net Worth hero */}
-        {d?.networth && (() => {
-          const nw = d.networth;
-          const max = Math.max(...nw.history.map(h => h.netWorth), 1);
-          return (
-            <View style={styles.netWorthCard}>
-              <Text style={styles.netWorthLabel}>💎 Net Worth</Text>
-              <Text style={styles.netWorthValue}>{formatINR(nw.netWorth)}</Text>
-              <View style={styles.netWorthBreakdown}>
-                <Text style={styles.netWorthBreakdownItem}>💵 Cash {formatINR(nw.cash)}</Text>
-                <Text style={styles.netWorthBreakdownItem}>📊 Investments {formatINR(nw.investments)}</Text>
-              </View>
-              {nw.history.length > 1 && (
-                <View style={styles.sparkRow}>
-                  {nw.history.map((h, i) => (
-                    <View key={i} style={styles.sparkCol}>
-                      <View style={[styles.sparkBar, { height: `${Math.max(4, (h.netWorth / max) * 100)}%` }]} />
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          );
-        })()}
-
         {/* Cash in Hand card */}
         <View style={styles.cashCard}>
           <View style={styles.cashHeader}>
@@ -255,28 +246,38 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Investments card */}
-        {d?.savings && d.savings.count > 0 && (() => {
-          const sv = d.savings;
-          const isGain = sv.totalGainLoss >= 0;
-          return (
-            <View style={[styles.cashCard, { backgroundColor: c.primary, shadowColor: c.primary }]}>
-              <View style={styles.cashHeader}>
-                <View>
-                  <Text style={styles.cashLabel}>📊 Investments</Text>
-                  <Text style={styles.cashBalance}>{formatINR(sv.totalCurrentValue)}</Text>
-                  <Text style={[styles.cashSub, { color: isGain ? 'rgba(167,243,208,0.9)' : 'rgba(252,165,165,0.9)' }]}>
-                    {isGain ? '▲' : '▼'} {formatINR(Math.abs(sv.totalGainLoss))} ({sv.totalGainPercent >= 0 ? '+' : ''}{sv.totalGainPercent.toFixed(1)}%)
-                  </Text>
+        {/* Budget progress */}
+        <Text style={styles.sectionTitle}>Budget This Month</Text>
+        {isLoading ? (
+          <View style={styles.card}>
+            {[1, 2].map(i => <View key={i} style={[styles.skeleton, { marginBottom: 12 }]} />)}
+          </View>
+        ) : !d?.budgets?.data?.length ? (
+          <View style={styles.card}>
+            <Text style={styles.emptyText}>No budgets set. Open the Budgets tab to add one.</Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            {d.budgets.data.map(budget => {
+              const isOver    = budget.percentUsed >= 100;
+              const isWarning = budget.percentUsed >= 80 && !isOver;
+              const barColor  = isOver ? c.danger : isWarning ? c.warning : c.success;
+              return (
+                <View key={budget.id} style={styles.budgetRow}>
+                  <View style={styles.budgetHeader}>
+                    <Text style={styles.budgetName}>{budget.category.icon} {budget.category.name}</Text>
+                    <Text style={[styles.budgetAmount, isOver && styles.overBudget]}>
+                      {formatINR(budget.spent)} / {formatINR(budget.amount)}
+                    </Text>
+                  </View>
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressBar, { width: `${budget.percentUsed}%`, backgroundColor: barColor }]} />
+                  </View>
                 </View>
-                <View>
-                  <Text style={[styles.cashSub, { textAlign: 'right' }]}>Invested</Text>
-                  <Text style={styles.cashBtnText}>{formatINR(sv.totalNetCost)}</Text>
-                </View>
-              </View>
-            </View>
-          );
-        })()}
+              );
+            })}
+          </View>
+        )}
 
         {/* Category breakdown chart */}
         <Text style={styles.sectionTitle}>Spending by Category</Text>
@@ -317,6 +318,57 @@ export default function DashboardScreen() {
           </View>
         )}
 
+        {/* ═══ GROWTH ═══ */}
+        <SectionHeader icon="📈" label="Growth" c={c} />
+
+        {/* Net Worth hero */}
+        {d?.networth && (() => {
+          const nw = d.networth;
+          const max = Math.max(...nw.history.map(h => h.netWorth), 1);
+          return (
+            <View style={styles.netWorthCard}>
+              <Text style={styles.netWorthLabel}>💎 Net Worth</Text>
+              <Text style={styles.netWorthValue}>{formatINR(nw.netWorth)}</Text>
+              <View style={styles.netWorthBreakdown}>
+                <Text style={styles.netWorthBreakdownItem}>💵 Cash {formatINR(nw.cash)}</Text>
+                <Text style={styles.netWorthBreakdownItem}>📊 Investments {formatINR(nw.investments)}</Text>
+              </View>
+              {nw.history.length > 1 && (
+                <View style={styles.sparkRow}>
+                  {nw.history.map((h, i) => (
+                    <View key={i} style={styles.sparkCol}>
+                      <View style={[styles.sparkBar, { height: `${Math.max(4, (h.netWorth / max) * 100)}%` }]} />
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          );
+        })()}
+
+        {/* Investments card */}
+        {d?.savings && d.savings.count > 0 && (() => {
+          const sv = d.savings;
+          const isGain = sv.totalGainLoss >= 0;
+          return (
+            <View style={[styles.cashCard, { backgroundColor: c.primary, shadowColor: c.primary }]}>
+              <View style={styles.cashHeader}>
+                <View>
+                  <Text style={styles.cashLabel}>📊 Investments</Text>
+                  <Text style={styles.cashBalance}>{formatINR(sv.totalCurrentValue)}</Text>
+                  <Text style={[styles.cashSub, { color: isGain ? 'rgba(167,243,208,0.9)' : 'rgba(252,165,165,0.9)' }]}>
+                    {isGain ? '▲' : '▼'} {formatINR(Math.abs(sv.totalGainLoss))} ({sv.totalGainPercent >= 0 ? '+' : ''}{sv.totalGainPercent.toFixed(1)}%)
+                  </Text>
+                </View>
+                <View>
+                  <Text style={[styles.cashSub, { textAlign: 'right' }]}>Invested</Text>
+                  <Text style={styles.cashBtnText}>{formatINR(sv.totalNetCost)}</Text>
+                </View>
+              </View>
+            </View>
+          );
+        })()}
+
         {/* Monthly trend chart */}
         <Text style={styles.sectionTitle}>Monthly Trend</Text>
         {isLoading ? (
@@ -351,39 +403,6 @@ export default function DashboardScreen() {
             </View>
           </View>
         ) : null}
-
-        {/* Budget progress */}
-        <Text style={styles.sectionTitle}>Budget This Month</Text>
-        {isLoading ? (
-          <View style={styles.card}>
-            {[1, 2].map(i => <View key={i} style={[styles.skeleton, { marginBottom: 12 }]} />)}
-          </View>
-        ) : !d?.budgets?.data?.length ? (
-          <View style={styles.card}>
-            <Text style={styles.emptyText}>No budgets set. Open the Budgets tab to add one.</Text>
-          </View>
-        ) : (
-          <View style={styles.card}>
-            {d.budgets.data.map(budget => {
-              const isOver    = budget.percentUsed >= 100;
-              const isWarning = budget.percentUsed >= 80 && !isOver;
-              const barColor  = isOver ? c.danger : isWarning ? c.warning : c.success;
-              return (
-                <View key={budget.id} style={styles.budgetRow}>
-                  <View style={styles.budgetHeader}>
-                    <Text style={styles.budgetName}>{budget.category.icon} {budget.category.name}</Text>
-                    <Text style={[styles.budgetAmount, isOver && styles.overBudget]}>
-                      {formatINR(budget.spent)} / {formatINR(budget.amount)}
-                    </Text>
-                  </View>
-                  <View style={styles.progressTrack}>
-                    <View style={[styles.progressBar, { width: `${budget.percentUsed}%`, backgroundColor: barColor }]} />
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        )}
 
         {/* Streak & achievements */}
         {d?.streaks && (
@@ -449,6 +468,16 @@ function BarRow({ label, amount, max, color }: { label: string; amount: number; 
   );
 }
 
+function SectionHeader({ icon, label, c }: { icon: string; label: string; c: Theme }) {
+  const styles = useMemo(() => makeStyles(c), [c]);
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{icon}  {label.toUpperCase()}</Text>
+      <View style={styles.sectionHeaderLine} />
+    </View>
+  );
+}
+
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const makeStyles = (c: Theme) => StyleSheet.create({
@@ -465,6 +494,9 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   },
   themeToggleIcon: { fontSize: 18 },
   sectionTitle: { fontSize: 15, fontWeight: '600', color: c.text, marginTop: 8 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18, marginBottom: 2 },
+  sectionHeaderText: { fontSize: 12, fontWeight: '800', letterSpacing: 1.2, color: c.textMuted },
+  sectionHeaderLine: { flex: 1, height: 1, backgroundColor: c.cardBorder },
 
   cardsRow: { flexDirection: 'row', gap: 8 },
   summaryCard: { flex: 1, borderRadius: 16, padding: 14, gap: 4, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },

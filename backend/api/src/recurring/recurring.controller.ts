@@ -6,6 +6,8 @@ import { RecurringService } from './recurring.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateRecurringDto } from './dto/create-recurring.dto';
+import { UpdateRecurringDto } from './dto/update-recurring.dto';
+import { MarkPaidDto } from './dto/mark-paid.dto';
 
 @Controller('recurring')
 @UseGuards(ClerkAuthGuard)
@@ -26,7 +28,7 @@ export class RecurringController {
   update(
     @CurrentUser() clerkId: string,
     @Param('id') id: string,
-    @Body() dto: Partial<CreateRecurringDto>,
+    @Body() dto: UpdateRecurringDto,
   ) {
     return this.service.update(clerkId, id, dto);
   }
@@ -42,7 +44,7 @@ export class RecurringController {
   markPaid(
     @CurrentUser() clerkId: string,
     @Param('id') id: string,
-    @Body() body: { transactionId?: string } = {},
+    @Body() body: MarkPaidDto,
   ) {
     return this.service.markPaid(clerkId, id, { transactionId: body.transactionId });
   }

@@ -17,7 +17,7 @@ import AddTransactionSheet, { type EditingTransaction } from '@/components/AddTr
 import AppAlert from '@/components/AppAlert';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
-import { habitColor } from '@/lib/habitColors';
+import { bankColor } from '@/lib/bankColors';
 
 interface BankStat {
   id: string;
@@ -248,7 +248,7 @@ export default function TransactionsScreen() {
           contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}
         >
           {banks.map(b => {
-            const col = habitColor(b.color);
+            const col = bankColor(b.color);
             return (
               <View key={b.id} style={[styles.bankChip, { borderColor: col.base }]}>
                 <View style={[styles.bankChipDot, { backgroundColor: col.base }]} />
@@ -280,7 +280,7 @@ export default function TransactionsScreen() {
           renderItem={({ item: tx }) => (
             <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => openEdit(tx)}>
               {tx.bank && (
-                <View style={[styles.bankStripe, { backgroundColor: habitColor(tx.bank.color).base }]} />
+                <View style={[styles.bankStripe, { backgroundColor: bankColor(tx.bank.color).base }]} />
               )}
               <View style={[styles.iconBox,
                 tx.type === 'CREDIT' ? styles.iconBoxCredit

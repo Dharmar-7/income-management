@@ -26,17 +26,40 @@ const LABELS: Record<MainRoute, string> = {
   savings: 'Savings',
 };
 
-const MORE_ITEMS = [
-  { label: 'Habits',      icon: '🔥', route: 'habits'      },
-  { label: 'Notes',       icon: '📝', route: 'notes'       },
-  { label: 'Reports',     icon: '📊', route: 'reports'     },
-  { label: 'Import',      icon: '📥', route: 'import'      },
-  { label: 'Settings',    icon: '⚙️', route: 'settings'    },
-  { label: 'Recurring',   icon: '🔄', route: 'recurring'   },
-  { label: 'Loans',       icon: '🏦', route: 'loans'       },
-  { label: 'Settlements', icon: '🤝', route: 'settlements' },
-  { label: 'Calendar',    icon: '📅', route: 'calendar'    },
-  { label: 'Documents',   icon: '🗂️', route: 'documents'   },
+// The "More" menu, grouped into worlds so 10 items read as a few scannable
+// sections instead of one flat pile. Titles are labels only — tapping an item
+// still jumps straight to that screen (no intermediate hub).
+const MORE_GROUPS = [
+  {
+    title: 'Money',
+    items: [
+      { label: 'Recurring',   icon: '🔄', route: 'recurring'   },
+      { label: 'Loans',       icon: '🏦', route: 'loans'       },
+      { label: 'Settlements', icon: '🤝', route: 'settlements' },
+      { label: 'Reports',     icon: '📊', route: 'reports'     },
+      { label: 'Import',      icon: '📥', route: 'import'      },
+    ],
+  },
+  {
+    title: 'Life',
+    items: [
+      { label: 'Habits',   icon: '🔥', route: 'habits'   },
+      { label: 'Calendar', icon: '📅', route: 'calendar' },
+    ],
+  },
+  {
+    title: 'Vault',
+    items: [
+      { label: 'Notes',     icon: '📝', route: 'notes'     },
+      { label: 'Documents', icon: '🗂️', route: 'documents' },
+    ],
+  },
+  {
+    title: 'System',
+    items: [
+      { label: 'Settings', icon: '⚙️', route: 'settings' },
+    ],
+  },
 ];
 
 export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps) {
@@ -65,28 +88,35 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.overlay} onPress={() => setOpen(false)}>
           <View style={[s.popup, { bottom: bottom + 80 }, dark ? s.popupDark : s.popupLight]}>
-            <View style={s.pgrid}>
-              {MORE_ITEMS.map((item, idx) => (
-                <TouchableOpacity
-                  key={item.label}
-                  style={[
-                    s.pitem,
-                    dark ? s.pitemDark : s.pitemLight,
-                    // Last item alone in a row → stretch full width
-                    MORE_ITEMS.length % 3 === 1 && idx === MORE_ITEMS.length - 1 && s.pitemFull,
-                  ]}
-                  onPress={() => {
-                    setOpen(false);
-                    if (item.route) jumpTo(item.route);
-                  }}
-                >
-                  <Text style={s.picon}>{item.icon}</Text>
-                  <Text style={[s.plabel, { color: dark ? 'rgba(255,255,255,0.85)' : '#374151' }]}>
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {MORE_GROUPS.map(group => (
+              <View key={group.title} style={s.psection}>
+                <Text style={[s.psectionTitle, { color: dark ? 'rgba(255,255,255,0.5)' : '#9ca3af' }]}>
+                  {group.title}
+                </Text>
+                <View style={s.pgrid}>
+                  {group.items.map(item => (
+                    <TouchableOpacity
+                      key={item.label}
+                      style={[
+                        s.pitem,
+                        dark ? s.pitemDark : s.pitemLight,
+                        // A lone item stretches full width so it doesn't look stranded.
+                        group.items.length === 1 && s.pitemFull,
+                      ]}
+                      onPress={() => {
+                        setOpen(false);
+                        if (item.route) jumpTo(item.route);
+                      }}
+                    >
+                      <Text style={s.picon}>{item.icon}</Text>
+                      <Text style={[s.plabel, { color: dark ? 'rgba(255,255,255,0.85)' : '#374151' }]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
           </View>
         </Pressable>
       </Modal>
@@ -243,6 +273,17 @@ const s = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 16,
+  },
+  psection: {
+    marginBottom: 8,
+  },
+  psectionTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+    marginLeft: 4,
   },
   pgrid: {
     flexDirection: 'row',

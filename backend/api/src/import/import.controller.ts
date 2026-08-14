@@ -83,11 +83,14 @@ export class ImportController {
   async parseStatement(
     @UploadedFile() file: Express.Multer.File,
     @CurrentUser() userId: string,
+    // Optional multipart text field — the password for an encrypted PDF. Sent
+    // only on the retry after the app is told the file is password-protected.
+    @Body('password') password?: string,
   ) {
     if (!file) {
       throw new BadRequestException('No file uploaded. Please attach a PDF or image.');
     }
-    return this.importService.parseStatement(file.buffer, file.mimetype, userId);
+    return this.importService.parseStatement(file.buffer, file.mimetype, userId, password?.trim() || undefined);
   }
 
   // POST /import/statement/commit

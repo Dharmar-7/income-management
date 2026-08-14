@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { google } from 'googleapis';
 import { EncryptionService } from '../common/encryption.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { signState, verifyState } from './oauth-state';
 
 @Injectable()
 export class GmailOAuthService {
@@ -18,18 +19,30 @@ export class GmailOAuthService {
     );
   }
 
+  // Secret used to sign the OAuth `state`. CLERK_SECRET_KEY is always present
+  // (validated at boot) and is a high-entropy server-only secret.
+  private stateSecret(): string {
+    return process.env.GMAIL_STATE_SECRET || process.env.CLERK_SECRET_KEY || '';
+  }
+
   // Step 1 — Generate the Google consent screen URL
   getAuthUrl(clerkUserId: string): string {
     return this.oauth2Client.generateAuthUrl({
       access_type: 'offline',   // gives us a refresh token
       prompt: 'consent',        // always show consent screen (ensures refresh token)
       scope: ['https://www.googleapis.com/auth/gmail.readonly'],
-      state: clerkUserId,       // pass userId through OAuth flow so we know who connected
+      // Signed { uid, iat } so the unauthenticated callback can't be forged to
+      // link a Google account to someone else's user id.
+      state: signState(clerkUserId, this.stateSecret(), Date.now()),
     });
   }
 
-  // Step 2 — Exchange auth code for tokens and save to DB (encrypted)
-  async handleCallback(code: string, clerkUserId: string): Promise<void> {
+  // Step 2 — Exchange auth code for tokens and save to DB (encrypted). The state
+  // is verified first — a bad signature / stale state is rejected before we
+  // touch Google or the DB.
+  async handleCallback(code: string, state: string): Promise<void> {
+    const clerkUserId = verifyState(state, this.stateSecret(), Date.now());
+
     const { tokens } = await this.oauth2Client.getToken(code);
 
     if (!tokens.access_token || !tokens.refresh_token) {

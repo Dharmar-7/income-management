@@ -81,9 +81,10 @@ export class ImportService {
     fileBuffer: Buffer,
     mimetype: string,
     clerkId: string,
+    password?: string,
   ): Promise<{ transactions: ReviewableStatementTxn[]; count: number }> {
     await this.resolveUserId(clerkId); // ensure the user exists before doing work
-    const parsed = await this.statementParser.parse(fileBuffer, mimetype);
+    const parsed = await this.statementParser.parse(fileBuffer, mimetype, password);
     const transactions = parsed.map((t) => ({
       ...t,
       categoryId: this.categorizer.getCategoryId(t.merchant) || undefined,

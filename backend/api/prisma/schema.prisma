@@ -32,6 +32,12 @@ model User {
   // Capped at 28 in the API so February always works.
   monthStartDay Int @default(1)
 
+  // Safe-to-Spend tuning. `stsBuffer` is a rupee cushion held back each cycle
+  // before the daily allowance is worked out. `stsDailyTarget` is an optional
+  // manual per-day cap — null (or 0) means auto (income spread evenly).
+  stsBuffer      Float  @default(0)
+  stsDailyTarget Float?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -509,7 +515,9 @@ model Settlement {
   transferredAt DateTime       // when the initial transfer happened
   settledAt     DateTime?      // when it was repaid/settled
 
-  // Linked transaction IDs — optional, but when set the tx type becomes TRANSFER
+  // Legacy 1:1 links — kept for older settlements. New settlements group any
+  // number of transactions via SettlementEntry (many sends ↔ many returns),
+  // and leave these null. When set (legacy), the linked tx type is TRANSFER.
   originalTxId  String? @unique  // the initial transfer transaction
   repaymentTxId String? @unique  // the repayment transaction
 
@@ -517,10 +525,39 @@ model Settlement {
   updatedAt DateTime @updatedAt
 
   userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries SettlementEntry[]
 
   @@index([userId, status])
   @@index([userId, personName])
+}
+
+// One transaction attached to a settlement "tab". A settlement can hold many:
+// several PRINCIPAL legs (the money that moved out/in) and several REPAYMENT
+// legs (the money coming back) — in any combination. Each linked transaction is
+// re-typed TRANSFER so it's excluded from income/expense. Balance = Σprincipal
+// − Σrepayment; the settlement is SETTLED when that reaches zero.
+model SettlementEntry {
+  id            String        @id @default(uuid())
+  kind          SettlementLeg
+  amount        Float
+  occurredAt    DateTime
+  // The real transaction this leg maps to (re-typed TRANSFER). Null = a manual
+  // amount with no bank transaction (e.g. cash returned).
+  transactionId String?       @unique
+  note          String?
+
+  createdAt DateTime @default(now())
+
+  settlementId String
+  settlement   Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+
+  @@index([settlementId])
+}
+
+enum SettlementLeg {
+  PRINCIPAL  // money that moved in the settlement's direction (what needs settling)
+  REPAYMENT  // money settling it back
 }
 
 enum SettlementStatus {

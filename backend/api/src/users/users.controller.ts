@@ -34,14 +34,14 @@ export class UsersController {
     return this.usersService.findOrCreate(clerkUserId, email, name);
   }
 
-  // PATCH /users/me — user-tunable settings (currently: month start day,
-  // so reports can follow a salary cycle instead of the calendar month)
+  // PATCH /users/me — user-tunable settings: month start day (salary cycle) and
+  // Safe-to-Spend tuning (buffer + optional manual daily cap).
   @Patch('me')
   @UseGuards(ClerkAuthGuard)
   updateSettings(
     @CurrentUser() clerkUserId: string,
     @Body() dto: UpdateSettingsDto,
   ) {
-    return this.usersService.updateSettings(clerkUserId, dto.monthStartDay);
+    return this.usersService.updateSettings(clerkUserId, dto);
   }
 }

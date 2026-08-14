@@ -5,7 +5,7 @@ import {
 import { SettlementsService } from './settlements.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { CreateSettlementDto, SettleDto } from './dto/create-settlement.dto';
+import { CreateSettlementDto, AddEntryDto, SettleDto } from './dto/create-settlement.dto';
 
 @Controller('settlements')
 @UseGuards(ClerkAuthGuard)
@@ -25,6 +25,22 @@ export class SettlementsController {
   @Post()
   create(@CurrentUser() clerkId: string, @Body() dto: CreateSettlementDto) {
     return this.service.create(clerkId, dto);
+  }
+
+  // Add another leg to a tab — another send (PRINCIPAL) or a return (REPAYMENT).
+  @Post(':id/entries')
+  addEntry(@CurrentUser() clerkId: string, @Param('id') id: string, @Body() dto: AddEntryDto) {
+    return this.service.addEntry(clerkId, id, dto);
+  }
+
+  // Remove one leg (restores its linked transaction's type).
+  @Delete(':id/entries/:entryId')
+  removeEntry(
+    @CurrentUser() clerkId: string,
+    @Param('id') id: string,
+    @Param('entryId') entryId: string,
+  ) {
+    return this.service.removeEntry(clerkId, id, entryId);
   }
 
   @Post(':id/settle')

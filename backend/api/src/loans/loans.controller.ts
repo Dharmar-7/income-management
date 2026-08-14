@@ -6,6 +6,8 @@ import { LoansService } from './loans.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateLoanDto } from './dto/create-loan.dto';
+import { UpdateLoanDto } from './dto/update-loan.dto';
+import { MarkPaidDto } from './dto/mark-paid.dto';
 
 @Controller('loans')
 @UseGuards(ClerkAuthGuard)
@@ -26,7 +28,7 @@ export class LoansController {
   update(
     @CurrentUser() clerkId: string,
     @Param('id') id: string,
-    @Body() dto: { name?: string; note?: string },
+    @Body() dto: UpdateLoanDto,
   ) {
     return this.service.update(clerkId, id, dto);
   }
@@ -42,7 +44,7 @@ export class LoansController {
   markPaid(
     @CurrentUser() clerkId: string,
     @Param('id') id: string,
-    @Body() body: { transactionId?: string } = {},
+    @Body() body: MarkPaidDto,
   ) {
     return this.service.markPaid(clerkId, id, { transactionId: body.transactionId });
   }

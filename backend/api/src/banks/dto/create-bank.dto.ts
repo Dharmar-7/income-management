@@ -5,8 +5,8 @@ export class CreateBankDto {
   @MaxLength(60)
   name: string;
 
-  // Palette key (teal/indigo/orange/green/violet/red/…). Validated loosely —
-  // the client picks from a fixed swatch list.
+  // Colour hex ("#6366f1") chosen in the picker, or a legacy palette key
+  // (teal/indigo/…) for banks made before the picker. Validated loosely.
   @IsOptional()
   @IsString()
   @MaxLength(20)

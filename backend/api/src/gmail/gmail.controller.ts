@@ -35,19 +35,22 @@ export class GmailController {
     return res.redirect(url);
   }
 
-  // GET /gmail/callback — Google redirects here after user approves
-  // Note: NOT protected by ClerkAuthGuard because the request comes from Google
+  // GET /gmail/callback — Google redirects here after user approves.
+  // NOT protected by ClerkAuthGuard (the request comes from Google), so trust is
+  // established by verifying the signed `state` inside handleCallback.
   @Get('callback')
   async callback(
     @Query('code') code: string,
-    @Query('state') clerkUserId: string,
+    @Query('state') state: string,
     @Res() res: express.Response,
   ) {
-    await this.oauthService.handleCallback(code, clerkUserId);
-    // Redirect back to the settings page in the web app
-    return res.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL}/settings?gmail=connected`,
-    );
+    try {
+      await this.oauthService.handleCallback(code, state);
+      return res.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/settings?gmail=connected`);
+    } catch {
+      // Forged/expired state or a failed token exchange — fail closed.
+      return res.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/settings?gmail=error`);
+    }
   }
 
   // GET /gmail/status — check if Gmail is connected

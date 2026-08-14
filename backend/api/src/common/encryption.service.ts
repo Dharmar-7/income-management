@@ -1,8 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 
-const ALGORITHM = 'aes-256-cbc';
-const IV_LENGTH = 16; // AES block size
+// AES-256-GCM is authenticated (tamper-evident) — preferred over CBC, which is
+// malleable. New values are written as GCM ("iv:tag:data", 3 parts). Values
+// written by the old CBC scheme ("iv:data", 2 parts) still decrypt, so existing
+// stored tokens keep working and roll over to GCM the next time they're saved.
+const GCM = 'aes-256-gcm';
+const CBC = 'aes-256-cbc';
+const GCM_IV_LENGTH = 12; // standard nonce size for GCM
 
 @Injectable()
 export class EncryptionService {
@@ -20,32 +25,41 @@ export class EncryptionService {
     }
   }
 
-  // Encrypt a plain text string → returns "iv:encryptedData" (both hex encoded)
+  // Encrypt a plain-text string → "iv:tag:encryptedData" (all hex, AES-256-GCM).
   encrypt(text: string): string {
-    // A new random IV for every encryption — makes identical inputs produce different outputs
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv(ALGORITHM, this.key, iv);
+    const iv = crypto.randomBytes(GCM_IV_LENGTH); // fresh nonce per encryption
+    const cipher = crypto.createCipheriv(GCM, this.key, iv);
 
-    const encrypted = Buffer.concat([
-      cipher.update(text, 'utf8'),
-      cipher.final(),
-    ]);
+    const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
 
-    // Store iv + encrypted data together so we can decrypt later
-    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+    return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
-  // Decrypt an "iv:encryptedData" string → returns original plain text
+  // Decrypt either the new GCM format (3 parts) or the legacy CBC format (2 parts).
   decrypt(encryptedText: string): string {
-    const [ivHex, dataHex] = encryptedText.split(':');
-    if (!ivHex || !dataHex) throw new Error('Invalid encrypted text format');
+    const parts = (encryptedText ?? '').split(':');
 
-    const iv = Buffer.from(ivHex, 'hex');
-    const data = Buffer.from(dataHex, 'hex');
+    if (parts.length === 3) {
+      const [ivHex, tagHex, dataHex] = parts;
+      const decipher = crypto.createDecipheriv(GCM, this.key, Buffer.from(ivHex, 'hex'));
+      decipher.setAuthTag(Buffer.from(tagHex, 'hex')); // throws on tamper/wrong key
+      return Buffer.concat([
+        decipher.update(Buffer.from(dataHex, 'hex')),
+        decipher.final(),
+      ]).toString('utf8');
+    }
 
-    const decipher = crypto.createDecipheriv(ALGORITHM, this.key, iv);
-    const decrypted = Buffer.concat([decipher.update(data), decipher.final()]);
+    if (parts.length === 2) {
+      // Legacy AES-256-CBC value written before the GCM migration.
+      const [ivHex, dataHex] = parts;
+      const decipher = crypto.createDecipheriv(CBC, this.key, Buffer.from(ivHex, 'hex'));
+      return Buffer.concat([
+        decipher.update(Buffer.from(dataHex, 'hex')),
+        decipher.final(),
+      ]).toString('utf8');
+    }
 
-    return decrypted.toString('utf8');
+    throw new Error('Invalid encrypted text format');
   }
 }

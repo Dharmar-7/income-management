@@ -42,9 +42,16 @@ async function bootstrap() {
   // reports, and especially notes whose images are inlined as base64 data URLs).
   app.use(compression());
 
-  // CORS — only allow requests from our web and mobile apps
+  // CORS — CORS is browser-enforced, so it only gates the WEB app; the native
+  // mobile app (no Origin header) is unaffected. In production set CORS_ORIGINS
+  // to a comma-separated allowlist of your web origins to lock this down. When
+  // it's unset (local dev), we reflect the request origin for convenience.
+  const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: true,  // Allow all origins in development
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
