@@ -904,7 +904,7 @@ export default function NotesScreen() {
             {note.tags.map(t => `#${t}`).join(' ')}
           </Text>
         )}
-        {note.reminderAt && !note.reminderSent && (
+        {note.reminderAt && new Date(note.reminderAt) > new Date() && (
           <Text style={styles.cardReminder}>
             ⏰ {new Date(note.reminderAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
           </Text>
