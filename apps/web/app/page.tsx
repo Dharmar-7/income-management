@@ -14,9 +14,9 @@ const FEATURES = [
     desc: 'Set monthly limits per category and get warned before you overspend.',
   },
   {
-    icon: '📧',
-    title: 'Auto-Sync from Gmail',
-    desc: 'Google Pay transactions imported automatically — no manual entry.',
+    icon: '💰',
+    title: 'Safe to Spend',
+    desc: 'A daily number that tells you exactly how much you can spend today.',
   },
   {
     icon: '📈',

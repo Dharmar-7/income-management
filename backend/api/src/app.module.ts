@@ -9,10 +9,8 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { PrismaModule } from './prisma/prisma.module';
-import { CommonModule } from './common/common.module';
 import { UsersModule } from './users/users.module';
 import { ImportModule } from './import/import.module';
-import { GmailModule } from './gmail/gmail.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { BudgetsModule } from './budgets/budgets.module';
 import { ReportsModule } from './reports/reports.module';
@@ -42,12 +40,10 @@ import { SafeToSpendModule } from './safe-to-spend/safe-to-spend.module';
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     ScheduleModule.forRoot(),   // enables @Cron decorators
     PrismaModule,
-    CommonModule,
     HealthModule,
     AuthModule,
     UsersModule,
     ImportModule,
-    GmailModule,
     TransactionsModule,
     BudgetsModule,
     ReportsModule,

@@ -20,11 +20,6 @@ model User {
   email     String   @unique
   name      String?                         // optional — some Google accounts have no display name
 
-  // Gmail integration — all token fields are AES-256 encrypted before storing
-  gmailAccessToken  String?   // encrypted, expires after ~1 hour
-  gmailRefreshToken String?   // encrypted, never expires
-  gmailTokenExpiry  DateTime? // when the access token expires
-  gmailSyncedAt     DateTime? // last time we successfully synced emails
   smsSyncedAt       DateTime? // last time we synced bank SMS (Android only)
 
   // Day the user's "money month" starts (1 = plain calendar month). Users paid

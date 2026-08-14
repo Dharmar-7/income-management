@@ -90,9 +90,9 @@ export default function SignInScreen() {
               desc: 'Set limits per category and get warned before you overspend',
             },
             {
-              icon: '📧',
-              title: 'Auto-Sync from Gmail',
-              desc: 'Google Pay transactions imported automatically',
+              icon: '💰',
+              title: 'Safe to Spend',
+              desc: 'Know exactly how much you can spend today',
             },
           ].map((item, i) => (
             <View key={i} style={{
