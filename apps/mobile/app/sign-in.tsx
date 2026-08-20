@@ -90,9 +90,9 @@ export default function SignInScreen() {
               desc: 'Set limits per category and get warned before you overspend',
             },
             {
-              icon: '💰',
-              title: 'Safe to Spend',
-              desc: 'Know exactly how much you can spend today',
+              icon: '💎',
+              title: 'Net Worth Tracking',
+              desc: 'Watch your cash and investments grow, month over month',
             },
           ].map((item, i) => (
             <View key={i} style={{

@@ -14,9 +14,9 @@ const FEATURES = [
     desc: 'Set monthly limits per category and get warned before you overspend.',
   },
   {
-    icon: '💰',
-    title: 'Safe to Spend',
-    desc: 'A daily number that tells you exactly how much you can spend today.',
+    icon: '💎',
+    title: 'Net Worth Tracking',
+    desc: 'Watch your cash and investments grow, month over month.',
   },
   {
     icon: '📈',

@@ -3,7 +3,7 @@
  * Pure helpers for a user's "money month" — a spending cycle that starts on
  * their `monthStartDay` instead of the 1st. Someone paid on the 28th has a
  * cycle running 28 Jun → 27 Jul, and calls that "July" (the month the salary
- * funds). Shared by Reports and Safe-to-Spend so the two never disagree.
+ * funds). Used by Reports for its money-month windows.
  *
  * Naming rule: a cycle starting late in the month (day > 15) is named after the
  * month it ENDS in; an early cycle keeps its start month's name.
@@ -25,22 +25,4 @@ export function currentCycle(now: Date, startDay: number) {
   if (d > 1 && d <= 15 && now.getDate() < d) shift = -1; // early cycle still in previous label
   const ref = new Date(now.getFullYear(), now.getMonth() + shift, 1);
   return { month: ref.getMonth() + 1, year: ref.getFullYear() };
-}
-
-/**
- * The cycle `now` sits in, plus day-counting for pacing:
- *  - totalDays: calendar days in the whole cycle
- *  - dayIndex:  today's 1-based position within the cycle
- *  - daysLeft:  today + all remaining days until the cycle ends
- */
-export function currentCycleWindow(now: Date, startDay: number) {
-  const { month, year } = currentCycle(now, startDay);
-  const { start, end } = monthWindow(year, month, startDay);
-  const MS = 86_400_000;
-  const dayMs = (dt: Date) => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-  const totalDays = Math.round((dayMs(end) - dayMs(start)) / MS) + 1;
-  const rawIndex = Math.round((dayMs(now) - dayMs(start)) / MS) + 1;
-  const dayIndex = Math.min(Math.max(rawIndex, 1), totalDays);
-  const daysLeft = totalDays - dayIndex + 1;
-  return { month, year, start, end, totalDays, dayIndex, daysLeft };
 }

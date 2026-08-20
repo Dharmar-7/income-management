@@ -27,12 +27,6 @@ model User {
   // Capped at 28 in the API so February always works.
   monthStartDay Int @default(1)
 
-  // Safe-to-Spend tuning. `stsBuffer` is a rupee cushion held back each cycle
-  // before the daily allowance is worked out. `stsDailyTarget` is an optional
-  // manual per-day cap — null (or 0) means auto (income spread evenly).
-  stsBuffer      Float  @default(0)
-  stsDailyTarget Float?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
