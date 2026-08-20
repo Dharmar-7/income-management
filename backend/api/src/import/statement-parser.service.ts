@@ -104,7 +104,8 @@ export class StatementParserService {
   }
 
   // ── text extraction ──────────────────────────────────────────────────────────
-  private async extractText(buffer: Buffer, mimetype: string, password?: string): Promise<string> {
+  // Public so the ATS reviewer can reuse the same PDF/OCR text extraction.
+  async extractText(buffer: Buffer, mimetype: string, password?: string): Promise<string> {
     if (mimetype === 'application/pdf') {
       // Passing an empty-string password makes pdf.js report "incorrect" instead
       // of "needs password", so only include it when the user actually gave one.

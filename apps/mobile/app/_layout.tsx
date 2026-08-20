@@ -13,6 +13,8 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { apiFetch } from '@/lib/api';
+import { useJobFinder } from '@/lib/useJobFinder';
+import { registerJobAlerts, unregisterJobAlerts, ensureNotificationPermission } from '@/lib/jobAlerts';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -89,6 +91,20 @@ function AuthGuard() {
   return null;
 }
 
+// Registers/unregisters the background job-alerts task as the opt-in Job Finder
+// flag flips, and asks for notification permission the first time it's on.
+function JobAlertsSync() {
+  const { enabled } = useJobFinder();
+  useEffect(() => {
+    if (enabled) {
+      ensureNotificationPermission().finally(() => registerJobAlerts());
+    } else {
+      unregisterJobAlerts();
+    }
+  }, [enabled]);
+  return null;
+}
+
 // Drives the OS status-bar text colour from the active theme.
 function ThemedStatusBar() {
   const { scheme } = useTheme();
@@ -115,6 +131,7 @@ function RootLayout() {
           <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
             <ThemedStatusBar />
             <AuthGuard />
+            <JobAlertsSync />
             <Slot />
           </PersistQueryClientProvider>
         </ClerkProvider>

@@ -30,7 +30,8 @@ import { DocumentsModule } from './documents/documents.module';
 import { EventsModule } from './events/events.module';
 import { HabitsModule } from './habits/habits.module';
 import { BanksModule } from './banks/banks.module';
-import { SafeToSpendModule } from './safe-to-spend/safe-to-spend.module';
+import { JobsModule } from './jobs/jobs.module';
+import { AtsModule } from './ats/ats.module';
 
 @Module({
   imports: [
@@ -63,7 +64,8 @@ import { SafeToSpendModule } from './safe-to-spend/safe-to-spend.module';
     EventsModule,
     HabitsModule,
     BanksModule,
-    SafeToSpendModule,
+    JobsModule,
+    AtsModule,
   ],
   controllers: [AppController],
   providers: [

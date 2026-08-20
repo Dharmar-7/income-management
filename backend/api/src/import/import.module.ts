@@ -10,6 +10,6 @@ import { AuthModule } from '../auth/auth.module';
   imports: [AuthModule],
   controllers: [ImportController],
   providers: [ImportService, TakeoutParserService, CategorizerService, StatementParserService],
-  exports: [CategorizerService],
+  exports: [CategorizerService, StatementParserService],
 })
 export class ImportModule {}
