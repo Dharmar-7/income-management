@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import VeloraGem from '@/components/VeloraGem';
 import { useTheme } from '@/context/ThemeContext';
+import { useJobFinder } from '@/lib/useJobFinder';
 
 const MAIN = ['index', 'transactions', 'budgets', 'savings'] as const;
 type MainRoute = (typeof MAIN)[number];
@@ -33,10 +34,12 @@ const MORE_GROUPS = [
   {
     title: 'Money',
     items: [
+      { label: 'Safety Net',  icon: '🛟', route: 'safety-net' },
       { label: 'Recurring',   icon: '🔄', route: 'recurring'   },
       { label: 'Loans',       icon: '🏦', route: 'loans'       },
       { label: 'Settlements', icon: '🤝', route: 'settlements' },
       { label: 'Reports',     icon: '📊', route: 'reports'     },
+      { label: 'Stock Check', icon: '📈', route: 'stock-check' },
       { label: 'Import',      icon: '📥', route: 'import'      },
     ],
   },
@@ -45,6 +48,7 @@ const MORE_GROUPS = [
     items: [
       { label: 'Habits',   icon: '🔥', route: 'habits'   },
       { label: 'Calendar', icon: '📅', route: 'calendar' },
+      { label: 'News',     icon: '📰', route: 'news'      },
     ],
   },
   {
@@ -57,10 +61,20 @@ const MORE_GROUPS = [
   {
     title: 'System',
     items: [
+      { label: 'Guide',    icon: '📖', route: 'guide'    },
       { label: 'Settings', icon: '⚙️', route: 'settings' },
     ],
   },
 ];
+
+// Shown only when the Job Finder is enabled in Settings (opt-in), inserted after "Life".
+const CAREER_GROUP = {
+  title: 'Career',
+  items: [
+    { label: 'Jobs', icon: '💼', route: 'jobs' },
+    { label: 'ATS Check', icon: '🎯', route: 'ats' },
+  ],
+};
 
 export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps) {
   const [open, setOpen] = useState(false);
@@ -69,6 +83,11 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
   const insets = useSafeAreaInsets();
 
   const active = state.routes[state.index]?.name;
+  const { enabled: jobsEnabled } = useJobFinder();
+  // Insert the opt-in "Career" group after Money + Life when enabled.
+  const groups = jobsEnabled
+    ? [...MORE_GROUPS.slice(0, 2), CAREER_GROUP, ...MORE_GROUPS.slice(2)]
+    : MORE_GROUPS;
 
   function jumpTo(name: string) {
     const target = state.routes.find(r => r.name === name);
@@ -88,7 +107,7 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={s.overlay} onPress={() => setOpen(false)}>
           <View style={[s.popup, { bottom: bottom + 80 }, dark ? s.popupDark : s.popupLight]}>
-            {MORE_GROUPS.map(group => (
+            {groups.map(group => (
               <View key={group.title} style={s.psection}>
                 <Text style={[s.psectionTitle, { color: dark ? 'rgba(255,255,255,0.5)' : '#9ca3af' }]}>
                   {group.title}

@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
 import { useClerk, useUser, useAuth } from '@clerk/clerk-expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useTheme, type ThemeMode } from '@/context/ThemeContext';
+import { useJobFinder } from '@/lib/useJobFinder';
+import { useEmergencyMode } from '@/lib/useEmergencyMode';
 
 const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
   { value: 'system', label: 'System', icon: '📱' },
@@ -21,6 +23,8 @@ export default function SettingsScreen() {
   const { theme: c, mode, setMode } = useTheme();
   const queryClient = useQueryClient();
   const [saving, setSaving] = useState(false);
+  const { enabled: jobsEnabled, setEnabled: setJobsEnabled } = useJobFinder();
+  const { enabled: emergencyEnabled, setEnabled: setEmergencyEnabled } = useEmergencyMode();
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -160,6 +164,51 @@ export default function SettingsScreen() {
                 : `e.g. "July" report = ${monthStartDay} Jul → ${monthStartDay - 1} Aug`}
             </Text>
           )}
+        </View>
+
+        {/* Features */}
+        <Text style={{ fontSize: 12, fontWeight: '600', color: c.textFaint, letterSpacing: 0.8, marginBottom: 8, marginLeft: 4 }}>
+          FEATURES
+        </Text>
+
+        <View style={{
+          backgroundColor: c.card, borderRadius: 16, padding: 16,
+          borderWidth: 1, borderColor: c.cardBorder, marginBottom: 12,
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '700', color: c.text, fontSize: 15 }}>💼 Job Finder</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 4, lineHeight: 17 }}>
+              Search jobs worldwide — remote or on-site — filtered by role, salary and experience.
+              Off by default to keep the app light; turning it on adds a “Jobs” entry to the More menu.
+            </Text>
+          </View>
+          <Switch
+            value={jobsEnabled}
+            onValueChange={setJobsEnabled}
+            trackColor={{ true: c.primary, false: c.inputBorder }}
+            thumbColor={c.onColor}
+          />
+        </View>
+
+        <View style={{
+          backgroundColor: c.card, borderRadius: 16, padding: 16,
+          borderWidth: 1, borderColor: c.cardBorder, marginBottom: 24,
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+        }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '700', color: c.text, fontSize: 15 }}>🛟 Emergency Mode</Text>
+            <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 4, lineHeight: 17 }}>
+              For if your income stops. Leads your Home screen with your runway, the essentials to cover
+              and a first-week plan. Your Safety Net always lives in the Money menu — this just brings it front and centre.
+            </Text>
+          </View>
+          <Switch
+            value={emergencyEnabled}
+            onValueChange={setEmergencyEnabled}
+            trackColor={{ true: c.primary, false: c.inputBorder }}
+            thumbColor={c.onColor}
+          />
         </View>
 
         {/* Sign Out */}
