@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionType } from '@prisma/client';
-// Pay-cycle "money month" windows — shared with Safe-to-Spend so they agree.
+// Pay-cycle "money month" windows.
 import { monthWindow, currentCycle } from '../common/pay-cycle';
 
 @Injectable()
@@ -197,6 +197,71 @@ export class ReportsService {
     );
 
     return { year: y, months, totals };
+  }
+
+  // ─── Category spend averages ───────────────────────────────────────────────
+  // Average monthly spend per category across the last N pay-cycle months.
+  // Powers the Safety Net runway (essential-vs-optional burn). Because the N
+  // cycles are contiguous, one groupBy over [oldest cycle start … current cycle
+  // end] ÷ N gives a per-month average — no need for N separate queries.
+  async getCategoryAverages(clerkId: string, months = 3) {
+    const userId = await this.resolveUserId(clerkId);
+    const startDay = await this.getMonthStartDay(userId);
+    const n = Math.min(Math.max(Math.round(months) || 3, 1), 12);
+    const cur = currentCycle(new Date(), startDay);
+
+    // monthWindow handles month underflow (negative m rolls into prior years),
+    // so `cur.month - (n - 1)` safely reaches back across a year boundary.
+    const { start } = monthWindow(cur.year, cur.month - (n - 1), startDay);
+    const { end } = monthWindow(cur.year, cur.month, startDay);
+
+    const [groups, totalAgg] = await Promise.all([
+      this.prisma.transaction.groupBy({
+        by: ['categoryId'],
+        where: {
+          userId,
+          type: TransactionType.DEBIT,
+          date: { gte: start, lte: end },
+          categoryId: { not: null },
+        },
+        _sum: { amount: true },
+      }),
+      // Total DEBIT (incl. uncategorised) so the burn rate isn't understated by
+      // spend that never got a category.
+      this.prisma.transaction.aggregate({
+        where: { userId, type: TransactionType.DEBIT, date: { gte: start, lte: end } },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const catIds = groups.map(g => g.categoryId!).filter(Boolean);
+    const categories = catIds.length
+      ? await this.prisma.category.findMany({ where: { id: { in: catIds } } })
+      : [];
+    const catMap = new Map(categories.map(c => [c.id, c]));
+
+    const perCategory = groups
+      .map(g => {
+        const cat = catMap.get(g.categoryId!);
+        return {
+          name: cat?.name ?? 'Other',
+          icon: cat?.icon ?? '📦',
+          avgMonthly: (g._sum.amount ?? 0) / n,
+        };
+      })
+      .filter(c => c.avgMonthly > 0)
+      .sort((a, b) => b.avgMonthly - a.avgMonthly);
+
+    const totalSpend = totalAgg._sum.amount ?? 0;
+    const categorizedSpend = groups.reduce((s, g) => s + (g._sum.amount ?? 0), 0);
+
+    return {
+      months: n,
+      period: { start: start.toISOString(), end: end.toISOString(), startDay },
+      perCategory,
+      totalAvgMonthly: totalSpend / n,
+      uncategorizedAvgMonthly: Math.max(0, (totalSpend - categorizedSpend) / n),
+    };
   }
 
   // ─── CSV Export ──────────────────────────────────────────────────────────────

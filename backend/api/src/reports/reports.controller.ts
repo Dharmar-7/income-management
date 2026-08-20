@@ -42,6 +42,16 @@ export class ReportsController {
     );
   }
 
+  // GET /reports/category-averages?months=3
+  // Average monthly spend per category — powers the Safety Net runway.
+  @Get('category-averages')
+  getCategoryAverages(
+    @CurrentUser() userId: string,
+    @Query('months') months?: string,
+  ) {
+    return this.service.getCategoryAverages(userId, months ? toInt(months, 3) : 3);
+  }
+
   // GET /reports/export?month=4&year=2026
   // Returns a CSV file — StreamableFile tells NestJS to send raw bytes, not JSON
   @Get('export')

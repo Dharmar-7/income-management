@@ -14,10 +14,12 @@ import { useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import CashSheet from '@/components/CashSheet';
 import EventsTicker from '@/components/EventsTicker';
-import SafeToSpendCard from '@/components/SafeToSpendCard';
 import HabitsTodayCard from '@/components/HabitsTodayCard';
+import RunwayCard from '@/components/RunwayCard';
+import EmergencyModePanel from '@/components/EmergencyModePanel';
 import Celebration from '@/components/Celebration';
 import { useTheme } from '@/context/ThemeContext';
+import { useEmergencyMode } from '@/lib/useEmergencyMode';
 import type { Theme } from '@/lib/theme';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ export default function DashboardScreen() {
   const { user } = useUser();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { enabled: emergencyMode } = useEmergencyMode();
   const [cashMode, setCashMode] = useState<'add' | 'spend' | null>(null);
 
   // Single aggregate call — replaces 8 parallel queries.
@@ -125,7 +128,6 @@ export default function DashboardScreen() {
 
   function handleRefresh() {
     dashQuery.refetch();
-    queryClient.invalidateQueries({ queryKey: ['safe-to-spend'] });
   }
 
   return (
@@ -140,7 +142,6 @@ export default function DashboardScreen() {
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['dashboard'] });
             queryClient.invalidateQueries({ queryKey: ['transactions'] }); // cash payments mirror into transactions
-            queryClient.invalidateQueries({ queryKey: ['safe-to-spend'] }); // spending changes today's number
           }}
         />
       )}
@@ -168,20 +169,23 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Emergency Mode — survival view leads the dashboard when enabled */}
+        {emergencyMode && <EmergencyModePanel />}
+
         {/* Occasions running ticker */}
         <EventsTicker />
 
         {/* ═══ TODAY ═══ */}
         <SectionHeader icon="🟢" label="Today" c={c} />
 
-        {/* Safe to Spend — the daily "how much can I spend?" number */}
-        <SafeToSpendCard />
-
         {/* Today's habits — quick check-off */}
         <HabitsTodayCard />
 
         {/* ═══ MONEY ═══ */}
         <SectionHeader icon="💰" label="Money" c={c} />
+
+        {/* Safety net — months of runway if income stops */}
+        <RunwayCard />
 
         {/* Summary cards */}
         {isLoading ? (
