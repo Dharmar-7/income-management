@@ -47,6 +47,97 @@ model User {
   habits                Habit[]
   habitCheckins         HabitCheckin[]
   banks                 Bank[]
+  pushTokens            PushToken[]
+  jobSearches           SavedJobSearch[]
+  watches               Watch[]
+
+  // ── Notification preferences (server push) ──
+  notifyJobs       Boolean  @default(true)   // push new job matches
+  notifyNews       Boolean  @default(false)  // send the news digest
+  newsCategories   String[] @default([])     // which desks: markets, tech, science…
+  newsDigestAt     DateTime?                  // last news digest sent (dedup window)
+}
+
+// ─────────────────────────────────────────
+// PUSH TOKEN
+// One Expo push token per device, so the server can push notifications
+// (job matches, news digest) even when the app is closed.
+// ─────────────────────────────────────────
+model PushToken {
+  id        String   @id @default(uuid())
+  token     String   @unique              // ExponentPushToken[...]
+  platform  String?                       // 'ios' | 'android'
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// SAVED JOB SEARCH
+// A server-side copy of a device's saved search so the hourly cron can re-run
+// it and push new matches even while the app is closed. Synced from the device;
+// clientId is the on-device search id (so re-syncs upsert instead of duplicate).
+// ─────────────────────────────────────────
+model SavedJobSearch {
+  id             String    @id @default(uuid())
+  clientId       String                          // the on-device SavedSearch.id
+  label          String
+  what           String
+  company        String?
+  where          String?
+  level          String?
+  type           String?
+  salaryMin      Int?
+  seenJobIds     String[]                         // ids already notified/seen
+  lastNotifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// WATCH
+// A "watch" is one company/topic term the user follows. The server checks it
+// against BOTH new job postings (hourly) and fresh news (with the digest) and
+// pushes matches — so a single term drives both alert channels. Synced from the
+// device; clientId is the on-device id. Each watch keeps its own seen-sets.
+// ─────────────────────────────────────────
+model Watch {
+  id             String    @id @default(uuid())
+  clientId       String                          // the on-device Watch.id
+  term           String                          // company or topic, e.g. "Google", "EV stocks"
+  seenJobIds     String[]                         // job ids already notified
+  seenNewsLinks  String[]                         // article links already notified
+  lastNotifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// NEWS SEEN
+// Global dedup for the news digest: which article links we've already counted,
+// so a story is never pushed twice. Pruned after a week. Not user-specific.
+// ─────────────────────────────────────────
+model NewsSeen {
+  id     String   @id @default(uuid())
+  link   String   @unique
+  seenAt DateTime @default(now())
+
+  @@index([seenAt])
 }
 
 // ─────────────────────────────────────────

@@ -15,7 +15,6 @@ import { apiFetch } from '@/lib/api';
 import CashSheet from '@/components/CashSheet';
 import EventsTicker from '@/components/EventsTicker';
 import HabitsTodayCard from '@/components/HabitsTodayCard';
-import RunwayCard from '@/components/RunwayCard';
 import EmergencyModePanel from '@/components/EmergencyModePanel';
 import Celebration from '@/components/Celebration';
 import { useTheme } from '@/context/ThemeContext';
@@ -183,9 +182,6 @@ export default function DashboardScreen() {
 
         {/* ═══ MONEY ═══ */}
         <SectionHeader icon="💰" label="Money" c={c} />
-
-        {/* Safety net — months of runway if income stops */}
-        <RunwayCard />
 
         {/* Summary cards */}
         {isLoading ? (

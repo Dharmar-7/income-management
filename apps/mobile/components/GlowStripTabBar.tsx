@@ -9,6 +9,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import VeloraGem from '@/components/VeloraGem';
 import { useTheme } from '@/context/ThemeContext';
 import { useJobFinder } from '@/lib/useJobFinder';
+import { useEmergencyMode } from '@/lib/useEmergencyMode';
 
 const MAIN = ['index', 'transactions', 'budgets', 'savings'] as const;
 type MainRoute = (typeof MAIN)[number];
@@ -54,6 +55,7 @@ const MORE_GROUPS = [
   {
     title: 'Vault',
     items: [
+      { label: 'Saved',     icon: '🔖', route: 'saved'     },
       { label: 'Notes',     icon: '📝', route: 'notes'     },
       { label: 'Documents', icon: '🗂️', route: 'documents' },
     ],
@@ -61,7 +63,9 @@ const MORE_GROUPS = [
   {
     title: 'System',
     items: [
+      { label: 'Watchlist', icon: '👀', route: 'watchlist' },
       { label: 'Guide',    icon: '📖', route: 'guide'    },
+      { label: 'Alerts',   icon: '🔔', route: 'notifications' },
       { label: 'Settings', icon: '⚙️', route: 'settings' },
     ],
   },
@@ -84,10 +88,19 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
 
   const active = state.routes[state.index]?.name;
   const { enabled: jobsEnabled } = useJobFinder();
+  const { enabled: emergencyEnabled } = useEmergencyMode();
+
+  // Safety Net only appears in the menu once Emergency Mode is turned on.
+  const scoped = emergencyEnabled
+    ? MORE_GROUPS
+    : MORE_GROUPS.map(g =>
+        g.title === 'Money' ? { ...g, items: g.items.filter(i => i.route !== 'safety-net') } : g,
+      );
+
   // Insert the opt-in "Career" group after Money + Life when enabled.
   const groups = jobsEnabled
-    ? [...MORE_GROUPS.slice(0, 2), CAREER_GROUP, ...MORE_GROUPS.slice(2)]
-    : MORE_GROUPS;
+    ? [...scoped.slice(0, 2), CAREER_GROUP, ...scoped.slice(2)]
+    : scoped;
 
   function jumpTo(name: string) {
     const target = state.routes.find(r => r.name === name);

@@ -13,6 +13,42 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-08-23',
+    title: '👀 Watchlist',
+    points: [
+      'Follow a company or topic once and get alerted on both fronts — fresh news about it and new jobs matching it.',
+      'Add terms in More → System → 👀 Watchlist, or tap “Watch” from a Jobs or News search.',
+    ],
+  },
+  {
+    date: '2026-08-23',
+    title: '🔖 Bookmarks & a sharper job hunt',
+    points: [
+      'Save any job or news article with the ☆ — find them all under More → Vault → Saved. Share articles straight from the card.',
+      'Jobs: mark listings “Applied”, hide ones you’re not interested in, and load more results as you scroll.',
+      'Jobs: sort by Newest or Relevance, and a “Posted within” freshness filter.',
+    ],
+  },
+  {
+    date: '2026-08-23',
+    title: '🔎 Search & filter News & Jobs',
+    points: [
+      'Jobs: a new Company field — hunt for roles at a specific employer (e.g. Google, TCS), on its own or alongside a role. Saved company searches get alerts too.',
+      'Jobs: a Filters sheet with 20 locations worldwide (remote + every Adzuna country), job type (full-time/part-time/contract/internship), experience and minimum salary.',
+      'Jobs: role suggestions as you type — tap one to search instantly.',
+      'News: a search box that sweeps every feed — look up a company, ticker or topic and see just the matching stories.',
+    ],
+  },
+  {
+    date: '2026-08-23',
+    title: '🔔 Reliable notifications',
+    points: [
+      'Job alerts and a news briefing now come from the server, so they arrive even when the app is fully closed.',
+      'New job matches are checked hourly; news is a morning & evening digest — a count, not a buzz per headline.',
+      'Choose exactly what you get in More → System → 🔔 Alerts.',
+    ],
+  },
+  {
     date: '2026-08-20',
     title: '📈 Stock Check',
     points: [
@@ -100,7 +136,8 @@ export const GUIDE: GuideSection[] = [
     items: [
       { icon: '🔥', title: 'Habits', what: 'Build daily habits and keep streaks; tick today’s off straight from Home.' },
       { icon: '📅', title: 'Calendar', what: 'Bills, occasions and reminders on a monthly view.' },
-      { icon: '📰', title: 'News', what: 'Finance, tech and science headlines in plain language, with source links.' },
+      { icon: '📰', title: 'News', what: 'Finance, tech and science headlines in plain language, with source links.', how: 'Use the search box to sweep every feed for a company, ticker or topic.' },
+      { icon: '🔖', title: 'Saved', what: 'Your bookmarked jobs and news articles in one place.', how: 'Tap the ☆ on any job or story to save it here.' },
       { icon: '📝', title: 'Notes', what: 'Quick notes for anything you want to remember.' },
       { icon: '🗂️', title: 'Documents', what: 'A private vault for receipts, statements and important files.' },
     ],
@@ -108,13 +145,15 @@ export const GUIDE: GuideSection[] = [
   {
     title: 'Career (opt-in)',
     items: [
-      { icon: '💼', title: 'Job Finder', what: 'Search jobs worldwide, save searches and get alerts for new matches.', how: 'Turn on in Settings → Features.' },
+      { icon: '💼', title: 'Job Finder', what: 'Search jobs worldwide by role and/or company, filter by location (remote + 19 countries), job type, experience and salary, save searches and get alerts for new matches.', how: 'Turn on in Settings → Features.' },
       { icon: '🎯', title: 'ATS Check', what: 'Score your resume against a job description, offline — see matched/missing keywords and concrete fixes.' },
     ],
   },
   {
     title: 'Your account',
     items: [
+      { icon: '👀', title: 'Watchlist', what: 'Follow a company or topic and get alerted on both fronts — fresh news about it and new jobs matching it.', how: 'Add terms in More → System → Watchlist, or tap “Watch” from a Jobs/News search.' },
+      { icon: '🔔', title: 'Notifications', what: 'Server-sent alerts that arrive even when the app is closed — hourly job-match alerts and a morning/evening news briefing.', how: 'Pick what you get in More → System → Alerts.' },
       { icon: '⚙️', title: 'Settings', what: 'Theme (light/dark), your money-month start day, and feature toggles for Job Finder and Emergency Mode.' },
       { icon: '🔒', title: 'Privacy', what: 'Your data stays in your account, and the extra tools — Stock Check, Safety Net, ATS — run entirely on your device.' },
     ],

@@ -32,6 +32,9 @@ import { HabitsModule } from './habits/habits.module';
 import { BanksModule } from './banks/banks.module';
 import { JobsModule } from './jobs/jobs.module';
 import { AtsModule } from './ats/ats.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { NewsModule } from './news/news.module';
+import { WatchlistModule } from './watchlist/watchlist.module';
 
 @Module({
   imports: [
@@ -66,6 +69,9 @@ import { AtsModule } from './ats/ats.module';
     BanksModule,
     JobsModule,
     AtsModule,
+    NotificationsModule,
+    NewsModule,
+    WatchlistModule,
   ],
   controllers: [AppController],
   providers: [

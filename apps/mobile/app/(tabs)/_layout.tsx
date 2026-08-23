@@ -41,6 +41,9 @@ export default function TabLayout() {
       <Tabs.Screen name="safety-net"   options={{ title: 'Safety Net'    }} />
       <Tabs.Screen name="stock-check"  options={{ title: 'Stock Check'   }} />
       <Tabs.Screen name="guide"        options={{ title: 'Guide'         }} />
+      <Tabs.Screen name="notifications" options={{ title: 'Notifications' }} />
+      <Tabs.Screen name="saved"        options={{ title: 'Saved'         }} />
+      <Tabs.Screen name="watchlist"    options={{ title: 'Watchlist'     }} />
     </Tabs>
   );
 }
