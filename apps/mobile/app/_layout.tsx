@@ -13,8 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { apiFetch } from '@/lib/api';
-import { useJobFinder } from '@/lib/useJobFinder';
-import { registerJobAlerts, unregisterJobAlerts, ensureNotificationPermission } from '@/lib/jobAlerts';
+import { registerPushToken } from '@/lib/pushNotifications';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -91,17 +90,16 @@ function AuthGuard() {
   return null;
 }
 
-// Registers/unregisters the background job-alerts task as the opt-in Job Finder
-// flag flips, and asks for notification permission the first time it's on.
-function JobAlertsSync() {
-  const { enabled } = useJobFinder();
+// Registers this device's Expo push token with the backend once signed in, so
+// the server can deliver job + news notifications even when the app is closed.
+function PushSync() {
+  const { isSignedIn, isLoaded, getToken } = useAuth();
+  const done = useRef(false);
   useEffect(() => {
-    if (enabled) {
-      ensureNotificationPermission().finally(() => registerJobAlerts());
-    } else {
-      unregisterJobAlerts();
-    }
-  }, [enabled]);
+    if (!isLoaded || !isSignedIn || done.current) return;
+    done.current = true;
+    registerPushToken(getToken);
+  }, [isLoaded, isSignedIn, getToken]);
   return null;
 }
 
@@ -131,7 +129,7 @@ function RootLayout() {
           <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
             <ThemedStatusBar />
             <AuthGuard />
-            <JobAlertsSync />
+            <PushSync />
             <Slot />
           </PersistQueryClientProvider>
         </ClerkProvider>
