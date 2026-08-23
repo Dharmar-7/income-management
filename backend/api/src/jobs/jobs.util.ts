@@ -23,7 +23,8 @@ export type Level = 'senior' | 'mid' | 'junior';
 // Adzuna is per-country, so show the right currency symbol on its salaries.
 const CURRENCY: Record<string, string> = {
   in: '₹', us: '$', gb: '£', au: 'A$', ca: 'C$', nz: 'NZ$', sg: 'S$',
-  de: '€', fr: '€', nl: '€', it: '€', es: '€', at: '€', pl: 'zł', za: 'R', br: 'R$', mx: 'MX$',
+  de: '€', fr: '€', nl: '€', it: '€', es: '€', at: '€', be: '€', ch: 'CHF',
+  pl: 'zł', za: 'R', br: 'R$', mx: 'MX$',
 };
 export function currencyFor(country: string): string {
   return CURRENCY[(country || '').toLowerCase()] ?? '$';
@@ -99,6 +100,29 @@ export function matchesKeyword(job: Job, what?: string): boolean {
   return terms.some(t => hay.includes(t));
 }
 
+// Company filter: a case-insensitive substring match on the employer name, so
+// "google" matches "Google LLC" / "Google India". Blank = no filter.
+export function matchesCompany(job: Job, company?: string): boolean {
+  const needle = (company ?? '').trim().toLowerCase();
+  if (!needle) return true;
+  return job.company.toLowerCase().includes(needle);
+}
+
+// Job-type filter. The source's own type wins; when a source doesn't disclose a
+// type we let the job through (like the salary filter) rather than hide good
+// remote listings. Internships are rarely typed, so we also read the title.
+export function matchesType(job: Job, type?: string): boolean {
+  if (!type) return true;
+  const t = (job.type ?? '').toLowerCase().replace(/[\s-]+/g, '_');
+  switch (type) {
+    case 'full_time':  return t === '' || t.includes('full_time');
+    case 'part_time':  return t === '' || t.includes('part_time');
+    case 'contract':   return t === '' || /contract|freelance|temporary/.test(t);
+    case 'internship': return /intern/.test(t) || /\bintern(ship)?\b/i.test(job.title);
+    default:           return true;
+  }
+}
+
 // ── Per-source normalisers (raw API object → Job); return null to skip junk ──
 
 export function normalizeAdzuna(r: any, country: string): Job | null {
@@ -112,7 +136,9 @@ export function normalizeAdzuna(r: any, country: string): Job | null {
     remote: /\bremote\b|work from home|wfh/i.test(blob),
     salaryMin: typeof r.salary_min === 'number' ? r.salary_min : null,
     salary: formatSalary(r.salary_min, r.salary_max, currencyFor(country)),
-    type: r.contract_time ?? null,
+    // contract_time is full_time/part_time; contract_type is contract/permanent.
+    // Surface "contract" explicitly so the type filter can honour it.
+    type: r.contract_type === 'contract' ? 'contract' : (r.contract_time ?? null),
     category: cleanText(r.category?.label) || null,
     description: clip(cleanText(r.description), 1500),
     source: 'Adzuna',

@@ -269,3 +269,39 @@ export async function fetchNews(key: CategoryKey): Promise<NewsItem[]> {
 
   return merged.slice(0, key === 'top' ? 60 : 50);
 }
+
+// ─── Search ─────────────────────────────────────────────────────────────────
+// A broad, deduped pool across EVERY feed, fetched once and cached (React Query
+// persists it), so a company/keyword search has plenty to match and filtering
+// then happens instantly on-device as the user types — no refetch per keystroke.
+// A higher per-feed cap than "top" widens the net without being unbounded.
+export async function fetchNewsPool(): Promise<NewsItem[]> {
+  const batches = await Promise.all(
+    ALL_FEEDS.map(async f => (await fetchOneFeed(f)).slice(0, 40)),
+  );
+
+  const seen = new Set<string>();
+  const merged = batches.flat().filter(item => {
+    const dedupeKey = (item.link || item.title).toLowerCase();
+    if (seen.has(dedupeKey)) return false;
+    seen.add(dedupeKey);
+    return true;
+  });
+
+  merged.sort((a, b) => (b.published ?? 0) - (a.published ?? 0));
+
+  if (merged.length === 0) {
+    throw new Error('Couldn’t reach the news right now. Pull down to try again.');
+  }
+  return merged;
+}
+
+// Match a story against a search query. Every whitespace-split term must appear
+// (AND) across the title, summary or source — so "reliance results" narrows
+// rather than widening. Matching a company name is just the common case.
+export function matchesNewsQuery(item: NewsItem, query: string): boolean {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = `${item.title} ${item.summary} ${item.source}`.toLowerCase();
+  return terms.every(t => hay.includes(t));
+}

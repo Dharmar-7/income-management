@@ -8,6 +8,9 @@ export class SearchJobsDto {
   what?: string; // role / keyword
 
   @IsOptional() @IsString() @MaxLength(100)
+  company?: string; // filter to a specific employer
+
+  @IsOptional() @IsString() @MaxLength(100)
   where?: string; // location (Adzuna on-site)
 
   @IsOptional() @IsString() @MaxLength(2)
@@ -19,9 +22,15 @@ export class SearchJobsDto {
   @IsOptional() @IsIn(['senior', 'mid', 'junior'])
   level?: 'senior' | 'mid' | 'junior';
 
+  @IsOptional() @IsIn(['full_time', 'part_time', 'contract', 'internship'])
+  type?: 'full_time' | 'part_time' | 'contract' | 'internship';
+
   @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean()
   remote?: boolean;
 
   @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean()
   sortByDate?: boolean;
+
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(20)
+  page?: number; // Adzuna page for "load more"; page>1 returns Adzuna-only results
 }

@@ -3,7 +3,7 @@ import { SearchJobsDto } from './dto/search-jobs.dto';
 import {
   Job,
   normalizeAdzuna, normalizeRemotive, normalizeRemoteOK, normalizeArbeitnow,
-  dedupe, sortByDateDesc, inferLevel, matchesKeyword,
+  dedupe, sortByDateDesc, inferLevel, matchesKeyword, matchesCompany, matchesType,
 } from './jobs.util';
 
 const UA = 'Mozilla/5.0 (compatible; VeloraJobs/1.0)';
@@ -37,14 +37,25 @@ export class JobsService {
   async search(dto: SearchJobsDto): Promise<{ jobs: Job[]; count: number; sources: string[] }> {
     const country = (dto.country || 'in').toLowerCase();
     const remoteOnly = dto.remote === true;
+    const page = dto.page && dto.page > 1 ? dto.page : 1;
+
+    // When filtering by company, fold the name into Adzuna's keyword so it
+    // surfaces that employer's postings upstream (Adzuna has no free company
+    // param); we still hard-filter by company after merging. Role matching for
+    // the remote boards stays on `what` alone so the role filter isn't loosened.
+    const adzunaWhat = [dto.what, dto.company].map(s => s?.trim()).filter(Boolean).join(' ') || undefined;
+
+    // The remote boards aren't paginated, so only fetch them on the first page;
+    // "load more" (page>1) pulls the next Adzuna page and appends it client-side.
+    const withBoards = page === 1;
 
     // Remote-only leans on the three purpose-built remote boards; on-site/worldwide
     // brings in Adzuna for the chosen country.
     const [adzuna, remotive, remoteok, arbeitnow] = await Promise.all([
-      remoteOnly ? Promise.resolve<Job[]>([]) : this.fetchAdzuna(dto, country),
-      this.fetchRemotive(dto),
-      this.fetchRemoteOK(),
-      this.fetchArbeitnow(),
+      remoteOnly ? Promise.resolve<Job[]>([]) : this.fetchAdzuna({ ...dto, what: adzunaWhat }, country, page),
+      withBoards ? this.fetchRemotive(dto) : Promise.resolve<Job[]>([]),
+      withBoards ? this.fetchRemoteOK() : Promise.resolve<Job[]>([]),
+      withBoards ? this.fetchArbeitnow() : Promise.resolve<Job[]>([]),
     ]);
 
     // Boards aren't keyword/salary filtered upstream (except Remotive's search),
@@ -56,6 +67,8 @@ export class JobsService {
     let all = [...adzuna, ...boards];
     if (remoteOnly) all = all.filter(j => j.remote);
     if (dto.level) all = all.filter(j => inferLevel(j.title) === dto.level);
+    if (dto.company) all = all.filter(j => matchesCompany(j, dto.company));
+    if (dto.type) all = all.filter(j => matchesType(j, dto.type));
 
     all = sortByDateDesc(dedupe(all));
 
@@ -64,7 +77,7 @@ export class JobsService {
     return { jobs, count: jobs.length, sources };
   }
 
-  private async fetchAdzuna(dto: SearchJobsDto, country: string): Promise<Job[]> {
+  private async fetchAdzuna(dto: SearchJobsDto, country: string, page = 1): Promise<Job[]> {
     const id = process.env.ADZUNA_APP_ID;
     const key = process.env.ADZUNA_APP_KEY;
     if (!id || !key) {
@@ -79,8 +92,12 @@ export class JobsService {
     if (dto.where) p.set('where', dto.where);
     if (dto.salaryMin) p.set('salary_min', String(dto.salaryMin));
     if (dto.sortByDate) p.set('sort_by', 'date');
+    // Adzuna exposes these as boolean flags; internship has no flag (post-filtered).
+    if (dto.type === 'full_time') p.set('full_time', '1');
+    else if (dto.type === 'part_time') p.set('part_time', '1');
+    else if (dto.type === 'contract') p.set('contract', '1');
 
-    const data = await getJson(`https://api.adzuna.com/v1/api/jobs/${country}/search/1?${p.toString()}`);
+    const data = await getJson(`https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${p.toString()}`);
     const results = Array.isArray(data?.results) ? data.results : [];
     return results.map((r: any) => normalizeAdzuna(r, country)).filter(Boolean) as Job[];
   }

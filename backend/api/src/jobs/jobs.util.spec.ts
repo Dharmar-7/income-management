@@ -1,5 +1,5 @@
 import {
-  formatSalary, inferLevel, dedupe, sortByDateDesc, matchesKeyword,
+  formatSalary, inferLevel, dedupe, sortByDateDesc, matchesKeyword, matchesCompany, matchesType,
   normalizeAdzuna, normalizeRemoteOK, normalizeArbeitnow, cleanText, Job,
 } from './jobs.util';
 
@@ -61,6 +61,42 @@ describe('jobs.util', () => {
     });
     it('rejects when no term matches', () => {
       expect(matchesKeyword(job, 'plumber welder')).toBe(false);
+    });
+  });
+
+  describe('matchesCompany', () => {
+    const job = mk({ company: 'Google India' });
+    it('matches on a case-insensitive substring of the employer', () => {
+      expect(matchesCompany(job, 'google')).toBe(true);
+      expect(matchesCompany(job, 'India')).toBe(true);
+    });
+    it('passes everything when no company is given', () => {
+      expect(matchesCompany(job, '')).toBe(true);
+      expect(matchesCompany(job, '   ')).toBe(true);
+    });
+    it('rejects a different employer', () => {
+      expect(matchesCompany(job, 'microsoft')).toBe(false);
+    });
+  });
+
+  describe('matchesType', () => {
+    it('matches the declared type', () => {
+      expect(matchesType(mk({ type: 'full_time' }), 'full_time')).toBe(true);
+      expect(matchesType(mk({ type: 'part_time' }), 'part_time')).toBe(true);
+      expect(matchesType(mk({ type: 'freelance' }), 'contract')).toBe(true);
+    });
+    it('lets undisclosed types through (like the salary filter)', () => {
+      expect(matchesType(mk({ type: null }), 'full_time')).toBe(true);
+    });
+    it('rejects a mismatched declared type', () => {
+      expect(matchesType(mk({ type: 'full_time' }), 'part_time')).toBe(false);
+    });
+    it('finds internships by title even when untyped', () => {
+      expect(matchesType(mk({ title: 'Software Engineering Intern', type: null }), 'internship')).toBe(true);
+      expect(matchesType(mk({ title: 'Software Engineer', type: null }), 'internship')).toBe(false);
+    });
+    it('passes everything when no type is given', () => {
+      expect(matchesType(mk({ type: 'full_time' }), undefined)).toBe(true);
     });
   });
 
