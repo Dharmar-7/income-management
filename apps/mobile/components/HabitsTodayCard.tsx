@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
@@ -34,8 +34,6 @@ function localToday(): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-
-const MAX_ROWS = 6; // keep the card compact; the rest lives on the Habits tab
 
 // A compact daily-habits checklist for the Home "Today" section: tick today's
 // habits off without leaving the dashboard.
@@ -104,9 +102,6 @@ export default function HabitsTodayCard() {
     );
   }
 
-  const visible = dueToday.slice(0, MAX_ROWS);
-  const hidden = dueToday.length - visible.length;
-
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -126,46 +121,55 @@ export default function HabitsTodayCard() {
             <View style={[styles.fill, { width: `${pct}%` }]} />
           </View>
 
-          <View style={styles.rows}>
-            {visible.map(h => {
+          {/* Horizontal chip strip — every habit fits at a fixed height; swipe
+              sideways for the rest. Tapping a chip completes it (fills with the
+              habit's colour). Avoids fighting the Home screen's vertical scroll. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.strip}
+          >
+            {dueToday.map(h => {
               const col = habitColor(h.color);
               const done = h.today === 'DONE';
               const partial = h.today === 'PARTIAL';
               return (
                 <TouchableOpacity
                   key={h.id}
-                  style={styles.row}
-                  activeOpacity={0.6}
+                  style={[
+                    styles.chip,
+                    done && { backgroundColor: col.base, borderColor: col.base },
+                    partial && { borderColor: col.base },
+                  ]}
+                  activeOpacity={0.7}
                   onPress={() => toggle(h)}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: done }}
                   accessibilityLabel={`${done ? 'Mark not done' : 'Mark done'}: ${h.name}`}
                 >
-                  <View
-                    style={[
-                      styles.checkbox,
-                      done && { backgroundColor: col.base, borderColor: col.base },
-                      partial && { borderColor: col.base },
-                    ]}
+                  {done ? (
+                    <Text style={styles.chipTick}>✓</Text>
+                  ) : (
+                    <View style={[styles.chipRing, partial && { borderColor: col.base }]}>
+                      {partial && <View style={[styles.chipDot, { backgroundColor: col.base }]} />}
+                    </View>
+                  )}
+                  <Text style={styles.chipIcon}>{h.icon}</Text>
+                  <Text
+                    style={[styles.chipName, done && styles.chipNameDone]}
+                    numberOfLines={1}
                   >
-                    {done && <Text style={styles.tick}>✓</Text>}
-                    {partial && <View style={[styles.partialDot, { backgroundColor: col.base }]} />}
-                  </View>
-                  <Text style={styles.rowIcon}>{h.icon}</Text>
-                  <Text style={[styles.rowName, done && styles.rowNameDone]} numberOfLines={1}>
                     {h.name}
                   </Text>
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </ScrollView>
         </>
       )}
 
       <TouchableOpacity style={styles.footer} onPress={() => router.push('/(tabs)/habits')} activeOpacity={0.7}>
-        <Text style={styles.footerText}>
-          {hidden > 0 ? `+${hidden} more · View all habits` : 'View all habits'}
-        </Text>
+        <Text style={styles.footerText}>View all habits</Text>
         <Text style={styles.footerArrow}>›</Text>
       </TouchableOpacity>
     </View>
@@ -186,17 +190,26 @@ const makeStyles = (c: Theme) => StyleSheet.create({
 
   noneToday: { fontSize: 13, color: c.textFaint },
 
-  rows: { gap: 2 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 7 },
-  checkbox: {
-    width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: c.inputBorder,
+  strip: { gap: 8, paddingVertical: 2, paddingRight: 4 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    paddingLeft: 8, paddingRight: 13, paddingVertical: 8,
+    borderRadius: 99, borderWidth: 1,
+    backgroundColor: c.chipBg, borderColor: c.chipBorder,
+    maxWidth: 180,
+  },
+  chipRing: {
+    width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: c.inputBorder,
     alignItems: 'center', justifyContent: 'center',
   },
-  tick: { color: c.onColor, fontSize: 13, fontWeight: '900', lineHeight: 15 },
-  partialDot: { width: 10, height: 10, borderRadius: 5 },
-  rowIcon: { fontSize: 15 },
-  rowName: { flex: 1, fontSize: 14, color: c.text, fontWeight: '500' },
-  rowNameDone: { color: c.textMuted, textDecorationLine: 'line-through' },
+  chipDot: { width: 8, height: 8, borderRadius: 4 },
+  chipTick: {
+    width: 18, height: 18, textAlign: 'center', lineHeight: 18,
+    color: c.onColor, fontSize: 12, fontWeight: '900',
+  },
+  chipIcon: { fontSize: 14 },
+  chipName: { fontSize: 13, color: c.text, fontWeight: '600' },
+  chipNameDone: { color: c.onColor },
 
   footer: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2,
