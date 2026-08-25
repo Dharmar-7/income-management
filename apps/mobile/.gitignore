@@ -1,0 +1,9 @@
+# Firebase / FCM push credentials — secret, never commit.
+# google-services.json is referenced by app.json (android.googleServicesFile)
+# but is provided at build time, not tracked in git.
+google-services.json
+GoogleService-Info.plist
+
+# Google service account keys (FCM V1) — highly sensitive.
+*service-account*.json
+*-fcm*.json
