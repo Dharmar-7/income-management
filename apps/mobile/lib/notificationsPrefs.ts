@@ -6,6 +6,9 @@ export interface NotifPrefs {
   notifyJobs: boolean;
   notifyNews: boolean;
   newsCategories: string[]; // subset of ['markets','tech','science']; [] = all
+  notifyBills: boolean;
+  notifyBudgets: boolean;
+  quietOvernight: boolean;
 }
 
 const QUERY_KEY = ['notifPrefs'];

@@ -9,6 +9,14 @@ export interface PushMessage {
   data?: Record<string, unknown>;
 }
 
+// True during 10pm–7am IST. Used to hold back the hourly job/watch pushes
+// overnight for users who opted into quiet hours (twice-daily digests are
+// scheduled at 8am/8pm, so they fall outside this window and are unaffected).
+export function isQuietHoursIST(now: Date = new Date()): boolean {
+  const istHour = new Date(now.getTime() + 5.5 * 3_600_000).getUTCHours();
+  return istHour >= 22 || istHour < 7;
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -32,18 +40,29 @@ export class NotificationsService {
   }
 
   // ── Notification preferences ──
+  private static readonly PREF_SELECT = {
+    notifyJobs: true, notifyNews: true, newsCategories: true,
+    notifyBills: true, notifyBudgets: true, quietOvernight: true,
+  } as const;
+
   async getPrefs(clerkId: string) {
     const userId = await this.prisma.resolveUserId(clerkId);
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { notifyJobs: true, notifyNews: true, newsCategories: true },
+      select: NotificationsService.PREF_SELECT,
     });
-    return u ?? { notifyJobs: true, notifyNews: false, newsCategories: [] };
+    return u ?? {
+      notifyJobs: true, notifyNews: false, newsCategories: [],
+      notifyBills: true, notifyBudgets: true, quietOvernight: false,
+    };
   }
 
   async updatePrefs(
     clerkId: string,
-    dto: { notifyJobs?: boolean; notifyNews?: boolean; newsCategories?: string[] },
+    dto: {
+      notifyJobs?: boolean; notifyNews?: boolean; newsCategories?: string[];
+      notifyBills?: boolean; notifyBudgets?: boolean; quietOvernight?: boolean;
+    },
   ) {
     const userId = await this.prisma.resolveUserId(clerkId);
     return this.prisma.user.update({
@@ -52,8 +71,11 @@ export class NotificationsService {
         ...(dto.notifyJobs !== undefined ? { notifyJobs: dto.notifyJobs } : {}),
         ...(dto.notifyNews !== undefined ? { notifyNews: dto.notifyNews } : {}),
         ...(dto.newsCategories !== undefined ? { newsCategories: dto.newsCategories } : {}),
+        ...(dto.notifyBills !== undefined ? { notifyBills: dto.notifyBills } : {}),
+        ...(dto.notifyBudgets !== undefined ? { notifyBudgets: dto.notifyBudgets } : {}),
+        ...(dto.quietOvernight !== undefined ? { quietOvernight: dto.quietOvernight } : {}),
       },
-      select: { notifyJobs: true, notifyNews: true, newsCategories: true },
+      select: NotificationsService.PREF_SELECT,
     });
   }
 

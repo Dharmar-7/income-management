@@ -35,6 +35,7 @@ import { AtsModule } from './ats/ats.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { NewsModule } from './news/news.module';
 import { WatchlistModule } from './watchlist/watchlist.module';
+import { MoneyAlertsModule } from './money-alerts/money-alerts.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { WatchlistModule } from './watchlist/watchlist.module';
     NotificationsModule,
     NewsModule,
     WatchlistModule,
+    MoneyAlertsModule,
   ],
   controllers: [AppController],
   providers: [

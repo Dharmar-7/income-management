@@ -13,6 +13,25 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-09-02',
+    title: '💰 Money alerts, calmer news & a job tracker',
+    points: [
+      'New alerts: a heads-up before bills & EMIs are due, and a nudge when a budget hits 80% then 100%. Toggle them in More → System → 🔔 Alerts.',
+      'Quiet hours: hold job & watchlist pings overnight (10pm–7am) — they arrive in the morning.',
+      'News briefing now shows the top headlines (balanced across topics) instead of raw counts.',
+      'Job tracker: mark a job Applied, then move it through Interviewing → Offer/Rejected under More → Vault → Saved → Applied.',
+    ],
+  },
+  {
+    date: '2026-09-01',
+    title: '🔔 Tap-through alerts & job alert setup',
+    points: [
+      'Tapping a news or job notification now opens the right screen — the matching search or story — instead of just the home page.',
+      'Jobs: a new “🌐 All” location that sweeps the major markets worldwide at once.',
+      'Set a job alert for any exact filter set (role · company · location · salary · type · experience) — tap “🔔 Alert me” on a search and you’ll be notified when new matches are posted.',
+    ],
+  },
+  {
     date: '2026-08-23',
     title: '👀 Watchlist',
     points: [
@@ -137,7 +156,7 @@ export const GUIDE: GuideSection[] = [
       { icon: '🔥', title: 'Habits', what: 'Build daily habits and keep streaks; tick today’s off straight from Home.' },
       { icon: '📅', title: 'Calendar', what: 'Bills, occasions and reminders on a monthly view.' },
       { icon: '📰', title: 'News', what: 'Finance, tech and science headlines in plain language, with source links.', how: 'Use the search box to sweep every feed for a company, ticker or topic.' },
-      { icon: '🔖', title: 'Saved', what: 'Your bookmarked jobs and news articles in one place.', how: 'Tap the ☆ on any job or story to save it here.' },
+      { icon: '🔖', title: 'Saved', what: 'Bookmarked jobs and articles, plus an Applied tab that tracks your job applications through Applied → Interviewing → Offer/Rejected.', how: 'Tap ☆ to save; tap “Mark applied” on a job to track it.' },
       { icon: '📝', title: 'Notes', what: 'Quick notes for anything you want to remember.' },
       { icon: '🗂️', title: 'Documents', what: 'A private vault for receipts, statements and important files.' },
     ],
@@ -153,7 +172,7 @@ export const GUIDE: GuideSection[] = [
     title: 'Your account',
     items: [
       { icon: '👀', title: 'Watchlist', what: 'Follow a company or topic and get alerted on both fronts — fresh news about it and new jobs matching it.', how: 'Add terms in More → System → Watchlist, or tap “Watch” from a Jobs/News search.' },
-      { icon: '🔔', title: 'Notifications', what: 'Server-sent alerts that arrive even when the app is closed — hourly job-match alerts and a morning/evening news briefing.', how: 'Pick what you get in More → System → Alerts.' },
+      { icon: '🔔', title: 'Notifications', what: 'Server-sent alerts that arrive even when the app is closed — job matches, a news briefing, bill/EMI reminders, budget warnings, and quiet hours.', how: 'Pick what you get in More → System → Alerts.' },
       { icon: '⚙️', title: 'Settings', what: 'Theme (light/dark), your money-month start day, and feature toggles for Job Finder and Emergency Mode.' },
       { icon: '🔒', title: 'Privacy', what: 'Your data stays in your account, and the extra tools — Stock Check, Safety Net, ATS — run entirely on your device.' },
     ],

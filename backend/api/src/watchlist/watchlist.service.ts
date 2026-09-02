@@ -3,7 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { JobsService } from '../jobs/jobs.service';
 import { NewsService } from '../news/news.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsService, isQuietHoursIST } from '../notifications/notifications.service';
 import { WatchItemDto } from './dto/sync-watches.dto';
 
 const SEEN_CAP = 400; // bound each watch's remembered id/link lists
@@ -56,11 +56,15 @@ export class WatchlistService {
 
   @Cron(CronExpression.EVERY_HOUR)
   async runJobWatch(): Promise<void> {
-    const watches = await this.prisma.watch.findMany();
+    const watches = await this.prisma.watch.findMany({
+      include: { user: { select: { quietOvernight: true } } },
+    });
     if (!watches.length) return;
 
+    const quiet = isQuietHoursIST();
     for (const w of watches) {
       try {
+        if (quiet && w.user.quietOvernight) continue; // hold overnight
         // Broad: the term as a keyword, no country restriction — Adzuna (India)
         // plus the worldwide remote boards. Covers company names and topics alike.
         const { jobs } = await this.jobs.search({ what: w.term, sortByDate: true });
@@ -81,7 +85,7 @@ export class WatchlistService {
           await this.notifications.sendToTokens(tokens, {
             title: `👀 ${fresh.length} new ${w.term} job${fresh.length > 1 ? 's' : ''}`,
             body: fresh[0].title,
-            data: { type: 'watch-jobs', clientId: w.clientId },
+            data: { type: 'watch-jobs', clientId: w.clientId, term: w.term },
           });
         }
 
@@ -124,7 +128,7 @@ export class WatchlistService {
           await this.notifications.sendToTokens(tokens, {
             title: `👀 ${fresh.length} ${w.term} ${fresh.length > 1 ? 'stories' : 'story'}`,
             body: fresh[0].title,
-            data: { type: 'watch-news', clientId: w.clientId },
+            data: { type: 'watch-news', clientId: w.clientId, term: w.term },
           });
         }
 

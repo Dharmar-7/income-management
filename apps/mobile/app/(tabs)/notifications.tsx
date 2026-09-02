@@ -61,7 +61,7 @@ export default function NotificationsScreen() {
               <View style={styles.row}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.title}>🗞️ News briefing</Text>
-                  <Text style={styles.sub}>A morning &amp; evening digest of new stories — a count, not a buzz per headline.</Text>
+                  <Text style={styles.sub}>A morning &amp; evening digest — the top headlines, not a buzz per story.</Text>
                 </View>
                 <Switch
                   value={prefs?.notifyNews ?? false}
@@ -93,6 +93,54 @@ export default function NotificationsScreen() {
                   </View>
                 </>
               )}
+            </View>
+
+            {/* Bill & EMI reminders */}
+            <View style={styles.card}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title}>🔔 Bill &amp; EMI reminders</Text>
+                  <Text style={styles.sub}>A heads-up when a recurring bill or loan EMI is due in the next couple of days.</Text>
+                </View>
+                <Switch
+                  value={prefs?.notifyBills ?? true}
+                  onValueChange={v => update({ notifyBills: v })}
+                  trackColor={{ true: c.primary, false: c.inputBorder }}
+                  thumbColor={c.onColor}
+                />
+              </View>
+            </View>
+
+            {/* Budget warnings */}
+            <View style={styles.card}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title}>🎯 Budget warnings</Text>
+                  <Text style={styles.sub}>A nudge when a category hits 80% and again at 100% of its monthly budget.</Text>
+                </View>
+                <Switch
+                  value={prefs?.notifyBudgets ?? true}
+                  onValueChange={v => update({ notifyBudgets: v })}
+                  trackColor={{ true: c.primary, false: c.inputBorder }}
+                  thumbColor={c.onColor}
+                />
+              </View>
+            </View>
+
+            {/* Quiet hours */}
+            <View style={styles.card}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.title}>🌙 Quiet hours</Text>
+                  <Text style={styles.sub}>Hold job &amp; watchlist alerts overnight (10pm–7am). Held alerts arrive in the morning.</Text>
+                </View>
+                <Switch
+                  value={prefs?.quietOvernight ?? false}
+                  onValueChange={v => update({ quietOvernight: v })}
+                  trackColor={{ true: c.primary, false: c.inputBorder }}
+                  thumbColor={c.onColor}
+                />
+              </View>
             </View>
 
             <Text style={styles.note}>

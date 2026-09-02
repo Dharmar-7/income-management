@@ -7,6 +7,15 @@ export class UpdatePrefsDto {
   @IsOptional() @IsBoolean()
   notifyNews?: boolean;
 
+  @IsOptional() @IsBoolean()
+  notifyBills?: boolean;
+
+  @IsOptional() @IsBoolean()
+  notifyBudgets?: boolean;
+
+  @IsOptional() @IsBoolean()
+  quietOvernight?: boolean;
+
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(3)

@@ -7,6 +7,27 @@ import { NewsCategory } from './news.util';
 
 const ALL_CATS: NewsCategory[] = ['markets', 'tech', 'science'];
 const PRUNE_DAYS = 7;
+const HEADLINES = 3; // how many headlines to show in the digest body
+
+// Pick up to `n` headlines, round-robin across the categories present, so a
+// high-volume desk (markets) can't crowd out tech/science in the preview.
+function balancedHeadlines(items: { title: string; category: NewsCategory }[], n: number): string[] {
+  const byCat = new Map<NewsCategory, string[]>();
+  for (const i of items) {
+    const arr = byCat.get(i.category) ?? [];
+    arr.push(i.title);
+    byCat.set(i.category, arr);
+  }
+  const cats = [...byCat.keys()];
+  const picked: string[] = [];
+  let idx = 0;
+  while (picked.length < n && cats.some(c => (byCat.get(c)?.length ?? 0) > 0)) {
+    const arr = byCat.get(cats[idx % cats.length]);
+    if (arr && arr.length) picked.push(arr.shift()!);
+    idx++;
+  }
+  return picked;
+}
 
 @Injectable()
 export class NewsDigestService {
@@ -59,14 +80,14 @@ export class NewsDigestService {
         const mine = fresh.filter(i => cats.includes(i.category));
         if (!mine.length) continue;
 
-        const counts = new Map<NewsCategory, number>();
-        for (const i of mine) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
-        const parts = [...counts.entries()].map(([c, n]) => `${n} ${c}`);
+        const headlines = balancedHeadlines(mine, HEADLINES);
+        const more = mine.length - headlines.length;
+        const body = headlines.map(h => `• ${h}`).join('\n') + (more > 0 ? `\n…and ${more} more` : '');
 
         const tokens = await this.notifications.tokensFor([user.id]);
         await this.notifications.sendToTokens(tokens, {
           title: `🗞️ Your briefing — ${mine.length} new ${mine.length > 1 ? 'stories' : 'story'}`,
-          body: `${parts.join(' · ')}\n${mine[0].title}`,
+          body,
           data: { type: 'news' },
         });
         await this.prisma.user.update({ where: { id: user.id }, data: { newsDigestAt: new Date() } });

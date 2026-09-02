@@ -7,8 +7,9 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
@@ -103,6 +104,58 @@ function PushSync() {
   return null;
 }
 
+// Routes a tapped notification to the right screen. Without this, tapping any
+// push just cold-opens the app at Home. Each push carries a `data` payload
+// ({ type, clientId?, term? }) set by the server; we map it to a destination.
+function NotificationRouter() {
+  const router = useRouter();
+  const { isSignedIn, isLoaded } = useAuth();
+  // One hook covers both a cold start (the notification that launched the app)
+  // and taps while it's running/backgrounded; it updates on each new response.
+  const lastResponse = Notifications.useLastNotificationResponse();
+  const routedIdRef = useRef<string | null>(null);
+
+  const route = useCallback((data: unknown) => {
+    if (!data || typeof data !== 'object') return;
+    const d = data as { type?: string; clientId?: string; term?: string };
+    const clientId = typeof d.clientId === 'string' ? d.clientId : undefined;
+    const term = typeof d.term === 'string' ? d.term : undefined;
+    switch (d.type) {
+      case 'jobs': // a saved-search alert → open that search
+        router.push({ pathname: '/(tabs)/jobs', params: clientId ? { focus: clientId } : {} });
+        break;
+      case 'watch-jobs': // a watched company/topic → search it
+        router.push({ pathname: '/(tabs)/jobs', params: term ? { term } : {} });
+        break;
+      case 'news':
+        router.push('/(tabs)/news');
+        break;
+      case 'watch-news':
+        router.push({ pathname: '/(tabs)/news', params: term ? { q: term } : {} });
+        break;
+      case 'bills':
+        router.push('/(tabs)/recurring');
+        break;
+      case 'budgets':
+        router.push('/(tabs)/budgets');
+        break;
+      default:
+        break;
+    }
+  }, [router]);
+
+  // Wait until signed in so the destination tab exists; route each response once.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !lastResponse) return;
+    const id = lastResponse.notification.request.identifier;
+    if (routedIdRef.current === id) return;
+    routedIdRef.current = id;
+    route(lastResponse.notification.request.content.data);
+  }, [lastResponse, isLoaded, isSignedIn, route]);
+
+  return null;
+}
+
 // Drives the OS status-bar text colour from the active theme.
 function ThemedStatusBar() {
   const { scheme } = useTheme();
@@ -130,6 +183,7 @@ function RootLayout() {
             <ThemedStatusBar />
             <AuthGuard />
             <PushSync />
+            <NotificationRouter />
             <Slot />
           </PersistQueryClientProvider>
         </ClerkProvider>

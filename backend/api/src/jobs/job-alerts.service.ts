@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { JobsService } from './jobs.service';
-import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationsService, isQuietHoursIST } from '../notifications/notifications.service';
 import { SearchJobsDto } from './dto/search-jobs.dto';
 import { SyncSearchItemDto } from './dto/sync-searches.dto';
 
@@ -64,13 +64,15 @@ export class JobAlertsService {
   @Cron(CronExpression.EVERY_HOUR)
   async runAlerts(): Promise<void> {
     const searches = await this.prisma.savedJobSearch.findMany({
-      include: { user: { select: { notifyJobs: true } } },
+      include: { user: { select: { notifyJobs: true, quietOvernight: true } } },
     });
     if (!searches.length) return;
 
+    const quiet = isQuietHoursIST();
     for (const s of searches) {
       try {
         if (!s.user.notifyJobs) continue;
+        if (quiet && s.user.quietOvernight) continue; // hold overnight; next run delivers it
 
         const { jobs } = await this.jobs.search(this.toDto(s));
         if (!jobs.length) continue;

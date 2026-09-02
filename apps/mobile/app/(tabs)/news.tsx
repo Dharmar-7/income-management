@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocalSearchParams } from 'expo-router';
 import {
   View,
   Text,
@@ -64,9 +65,20 @@ export default function NewsScreen() {
   const { getToken } = useAuth();
   const { isSaved, toggle: toggleSaved } = useSavedArticles();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
+  const params = useLocalSearchParams<{ q?: string }>();
   const [category, setCategory] = useState<CategoryKey>('top');
   const [search, setSearch] = useState('');
   const searchTerm = search.trim();
+
+  // Deep link from a watched-news notification: `q` = the term to search.
+  const handledQRef = useRef<string | null>(null);
+  useEffect(() => {
+    const q = typeof params.q === 'string' ? params.q : undefined;
+    if (q && handledQRef.current !== q) {
+      handledQRef.current = q;
+      setSearch(q);
+    }
+  }, [params.q]);
   const searching = searchTerm.length > 0;
 
   const query = useQuery({

@@ -56,6 +56,9 @@ model User {
   notifyNews       Boolean  @default(false)  // send the news digest
   newsCategories   String[] @default([])     // which desks: markets, tech, science…
   newsDigestAt     DateTime?                  // last news digest sent (dedup window)
+  notifyBills      Boolean  @default(true)   // remind before bills/EMIs are due
+  notifyBudgets    Boolean  @default(true)   // warn when a budget is nearly/over spent
+  quietOvernight   Boolean  @default(false)  // suppress hourly pushes 10pm–7am IST
 }
 
 // ─────────────────────────────────────────
@@ -225,6 +228,7 @@ model Budget {
   amount     Float                           // the spending limit in INR
   month      Int                             // 1–12
   year       Int                             // e.g. 2026
+  lastAlertedPct Int  @default(0)            // highest spend-% already pushed this month (0/80/100)
 
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -497,6 +501,7 @@ model RecurringTransaction {
   nextDueDate DateTime
   isActive    Boolean            @default(true)
   note        String?
+  lastRemindedDue DateTime?      // nextDueDate we last pushed a reminder for (dedup)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -536,6 +541,7 @@ model Loan {
   startDate       DateTime // disbursement / first EMI date
   isActive        Boolean  @default(true)
   note            String?
+  lastRemindedEmi DateTime? // EMI due-date we last pushed a reminder for (dedup)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

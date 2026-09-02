@@ -7,8 +7,18 @@ import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 import { useSavedJobs, useSavedArticles, type SavedJob, type SavedArticle } from '@/lib/bookmarks';
+import { useJobTracker, STAGES, type TrackedJob, type JobStage } from '@/lib/jobTracker';
 
-type Tab = 'jobs' | 'articles';
+type Tab = 'jobs' | 'tracker' | 'articles';
+
+function stageColor(stage: JobStage, c: Theme): string {
+  switch (stage) {
+    case 'offer': return c.success;
+    case 'rejected': return c.danger;
+    case 'interviewing': return c.violet;
+    default: return c.primary; // applied
+  }
+}
 
 export default function SavedScreen() {
   const { theme: c } = useTheme();
@@ -17,6 +27,7 @@ export default function SavedScreen() {
 
   const savedJobs = useSavedJobs();
   const savedArticles = useSavedArticles();
+  const tracker = useJobTracker();
 
   async function openUrl(url: string) {
     if (!url) return;
@@ -82,40 +93,85 @@ export default function SavedScreen() {
     );
   }
 
-  const isJobs = tab === 'jobs';
-  const empty = isJobs ? savedJobs.items.length === 0 : savedArticles.items.length === 0;
+  function renderTracked({ item }: { item: TrackedJob }) {
+    return (
+      <View style={styles.card}>
+        <TouchableOpacity activeOpacity={0.7} onPress={() => openUrl(item.url)}>
+          <View style={styles.metaRow}>
+            <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
+            <TouchableOpacity onPress={() => tracker.remove(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.removeX}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+          <Text style={styles.sub} numberOfLines={1}>
+            {item.company}{item.location ? ` · ${item.location}` : ''}
+          </Text>
+        </TouchableOpacity>
+        <View style={styles.stageRow}>
+          {STAGES.map(s => {
+            const on = item.stage === s.key;
+            return (
+              <TouchableOpacity
+                key={s.key}
+                onPress={() => tracker.setStage(item.id, s.key)}
+                style={[styles.stageChip, on && { backgroundColor: stageColor(s.key, c), borderColor: stageColor(s.key, c) }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.stageChipText, { color: on ? c.onColor : c.textMuted }]}>{s.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  const counts = { jobs: savedJobs.items.length, tracker: tracker.items.length, articles: savedArticles.items.length };
+  const labels: Record<Tab, string> = {
+    jobs: `💼 Saved (${counts.jobs})`,
+    tracker: `📋 Applied (${counts.tracker})`,
+    articles: `📰 News (${counts.articles})`,
+  };
+  const emptyText: Record<Tab, string> = {
+    jobs: 'No saved jobs yet. Tap the ☆ on any job to keep it here.',
+    tracker: 'No applications tracked yet. Tap “Mark applied” on a job to start.',
+    articles: 'No saved articles yet. Tap the ☆ on any story to keep it here.',
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <View style={styles.tabs}>
-        {(['jobs', 'articles'] as Tab[]).map(t => (
+        {(['jobs', 'tracker', 'articles'] as Tab[]).map(t => (
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && styles.tabActive]}
             onPress={() => setTab(t)}
             activeOpacity={0.8}
           >
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'jobs' ? `💼 Jobs (${savedJobs.items.length})` : `📰 Articles (${savedArticles.items.length})`}
-            </Text>
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]} numberOfLines={1}>{labels[t]}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {empty ? (
+      {counts[tab] === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.bigEmoji}>🔖</Text>
-          <Text style={styles.centerText}>
-            {isJobs
-              ? 'No saved jobs yet. Tap the ☆ on any job to keep it here.'
-              : 'No saved articles yet. Tap the ☆ on any story to keep it here.'}
-          </Text>
+          <Text style={styles.bigEmoji}>{tab === 'tracker' ? '📋' : '🔖'}</Text>
+          <Text style={styles.centerText}>{emptyText[tab]}</Text>
         </View>
-      ) : isJobs ? (
+      ) : tab === 'jobs' ? (
         <FlatList
           data={savedJobs.items}
           keyExtractor={j => j.id}
           renderItem={renderJob}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+        />
+      ) : tab === 'tracker' ? (
+        <FlatList
+          data={tracker.items}
+          keyExtractor={j => j.id}
+          renderItem={renderTracked}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
         />
@@ -138,7 +194,7 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   tabs: { flexDirection: 'row', gap: 8, padding: 12, borderBottomWidth: 1, borderBottomColor: c.cardBorder },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12, backgroundColor: c.chipBg, borderWidth: 1, borderColor: c.chipBorder },
   tabActive: { backgroundColor: c.primary, borderColor: c.primary },
-  tabText: { fontSize: 13, fontWeight: '700', color: c.textMuted },
+  tabText: { fontSize: 12, fontWeight: '700', color: c.textMuted },
   tabTextActive: { color: c.onColor },
 
   list: { padding: 12, gap: 10, paddingBottom: 32 },
@@ -157,6 +213,10 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, gap: 8 },
   link: { fontSize: 12, fontWeight: '700', marginTop: 10 },
   badge: { fontSize: 11, fontWeight: '600', color: c.textMuted },
+  removeX: { fontSize: 14, fontWeight: '700', color: c.textFaint, paddingHorizontal: 4 },
+  stageRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  stageChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 99, borderWidth: 1, backgroundColor: c.chipBg, borderColor: c.chipBorder },
+  stageChipText: { fontSize: 11.5, fontWeight: '700' },
 
   center: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   bigEmoji: { fontSize: 40 },

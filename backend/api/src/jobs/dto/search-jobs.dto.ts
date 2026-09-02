@@ -13,8 +13,8 @@ export class SearchJobsDto {
   @IsOptional() @IsString() @MaxLength(100)
   where?: string; // location (Adzuna on-site)
 
-  @IsOptional() @IsString() @MaxLength(2)
-  country?: string; // Adzuna 2-letter code; defaults to 'in' in the service
+  @IsOptional() @IsString() @MaxLength(3)
+  country?: string; // Adzuna 2-letter code, or 'all' to sweep major markets; defaults to 'in'
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100_000_000)
   salaryMin?: number;

@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { apiFetch } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
@@ -14,6 +14,7 @@ import type { Theme } from '@/lib/theme';
 import { useJobSearches, signatureOf, syncSearchesToServer, type SavedSearch } from '@/lib/jobSearches';
 import { useSavedJobs } from '@/lib/bookmarks';
 import { useJobStatus } from '@/lib/jobStatus';
+import { useJobTracker, stageLabel, type JobStage } from '@/lib/jobTracker';
 import { useWatchlist, syncWatchlistToServer } from '@/lib/watchlist';
 
 // Mirror of the backend Job shape (see backend/api/src/jobs/jobs.util.ts).
@@ -38,6 +39,7 @@ interface JobsResponse { jobs: Job[]; count: number; sources: string[] }
 // countries" endpoint — so this list IS the full worldwide on-site coverage.
 const WHERE_OPTIONS = [
   { key: 'remote', label: '🌍 Remote' },
+  { key: 'all', label: '🌐 All' },
   { key: 'in', label: '🇮🇳 India' },
   { key: 'us', label: '🇺🇸 US' },
   { key: 'gb', label: '🇬🇧 UK' },
@@ -127,6 +129,15 @@ function suggestRoles(input: string): string[] {
   return [...starts, ...contains].filter(r => r.toLowerCase() !== q).slice(0, 6);
 }
 
+function stageColor(stage: JobStage, c: Theme): string {
+  switch (stage) {
+    case 'offer': return c.success;
+    case 'rejected': return c.danger;
+    case 'interviewing': return c.violet;
+    default: return c.primary; // applied
+  }
+}
+
 const SOURCE_COLOR: Record<Job['source'], (c: Theme) => string> = {
   Adzuna: c => c.primary,
   Remotive: c => c.teal,
@@ -165,8 +176,10 @@ export default function JobsScreen() {
   const { searches, add, remove, markSeen } = useJobSearches();
   const { isSaved: isJobSaved, toggle: toggleJobSaved } = useSavedJobs();
   const { statusOf, setStatus, map: statusMap } = useJobStatus();
+  const { stageOf: jobStage, track: trackJob, remove: untrackJob } = useJobTracker();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
   const router = useRouter();
+  const params = useLocalSearchParams<{ focus?: string; term?: string }>();
   const qc = useQueryClient();
 
   const [role, setRole] = useState('');
@@ -194,6 +207,7 @@ export default function JobsScreen() {
   const prevSeenRef = useRef<Set<string>>(new Set());
   const trackedIdRef = useRef<string | null>(null); // non-null only for saved (tracked) searches
   const markedRef = useRef<string | null>(null);     // guards persisting "seen" once per run
+  const handledParamRef = useRef<string | null>(null); // deep-link params handled once
 
   const query = useInfiniteQuery({
     queryKey: ['jobs', submitted],
@@ -234,6 +248,27 @@ export default function JobsScreen() {
   useEffect(() => {
     getToken().then(t => { if (t) syncWatchlistToServer(watchItems, t); });
   }, [watchItems, getToken]);
+
+  // Deep link from a notification tap: `focus` = a saved-search id to open, or
+  // `term` = a keyword (a watched company/topic) to search straight away.
+  useEffect(() => {
+    const focus = typeof params.focus === 'string' ? params.focus : undefined;
+    const term = typeof params.term === 'string' ? params.term : undefined;
+    const sig = focus ? `focus:${focus}` : term ? `term:${term}` : null;
+    if (!sig || handledParamRef.current === sig) return;
+
+    if (focus) {
+      const saved = searches.find(x => x.id === focus);
+      if (!saved) return; // saved searches may still be loading — retry when they arrive
+      handledParamRef.current = sig;
+      loadSaved(saved);
+    } else if (term) {
+      handledParamRef.current = sig;
+      setRole(term);
+      setShowRoleSug(false);
+      runWith({ what: term, where: 'all', level: 'any', type: 'any' });
+    }
+  }, [params.focus, params.term, searches]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // All loaded pages, flattened and de-duped by id (a job can recur across pages).
   const rawJobs = useMemo(() => {
@@ -381,6 +416,7 @@ export default function JobsScreen() {
     const fresh = isNew(item);
     const saved = isJobSaved(item.id);
     const status = statusOf(item.id);
+    const stage = jobStage(item.id);
     return (
       <TouchableOpacity style={[styles.card, fresh && styles.cardNew, status === 'hidden' && styles.cardHidden]} activeOpacity={0.7} onPress={() => openJob(item)}>
         <View style={styles.metaRow}>
@@ -388,7 +424,7 @@ export default function JobsScreen() {
           <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
           {when ? <Text style={styles.time}>· {when}</Text> : null}
           {fresh && <View style={styles.newPill}><Text style={styles.newPillText}>🆕 NEW</Text></View>}
-          {status === 'applied' && <View style={styles.appliedPill}><Text style={styles.appliedPillText}>✓ APPLIED</Text></View>}
+          {stage && <View style={[styles.appliedPill, { backgroundColor: stageColor(stage, c) }]}><Text style={styles.appliedPillText}>✓ {stageLabel(stage).toUpperCase()}</Text></View>}
           <TouchableOpacity
             onPress={() => toggleJobSaved({ id: item.id, title: item.title, company: item.company, location: item.location, remote: item.remote, salary: item.salary, type: item.type, source: item.source, url: item.url, description: item.description, postedAt: item.postedAt })}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -414,9 +450,15 @@ export default function JobsScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.trackRow}>
-          <TouchableOpacity onPress={() => setStatus(item.id, 'applied')} style={styles.trackBtn} activeOpacity={0.7}>
-            <Text style={[styles.trackBtnText, status === 'applied' && styles.trackBtnTextOn]}>
-              {status === 'applied' ? '✓ Applied' : 'Mark applied'}
+          <TouchableOpacity
+            onPress={() => (stage
+              ? untrackJob(item.id)
+              : trackJob({ id: item.id, title: item.title, company: item.company, location: item.location, url: item.url, source: item.source, salary: item.salary }))}
+            style={styles.trackBtn}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.trackBtnText, stage && styles.trackBtnTextOn]}>
+              {stage ? `✓ ${stageLabel(stage)}` : 'Mark applied'}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setStatus(item.id, 'hidden')} style={styles.trackBtn} activeOpacity={0.7}>
@@ -519,7 +561,7 @@ export default function JobsScreen() {
         <View style={styles.center}>
           <Text style={styles.bigEmoji}>🌍</Text>
           <Text style={styles.centerTitle}>Find your next role</Text>
-          <Text style={styles.centerText}>Search by role, by company, or both — remote worldwide or on-site by country. Save a search to track what's new.</Text>
+          <Text style={styles.centerText}>Search by role, company, location, salary, type and experience — then tap 🔔 Alert me to be notified whenever new matching jobs are posted.</Text>
         </View>
       ) : query.isLoading ? (
         <View style={styles.center}>
@@ -568,7 +610,7 @@ export default function JobsScreen() {
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity onPress={toggleSave} activeOpacity={0.8} style={[styles.saveBtn, isSaved && styles.saveBtnActive]}>
-                  <Text style={[styles.saveBtnText, isSaved && styles.saveBtnTextActive]}>{isSaved ? '★ Saved' : '☆ Save'}</Text>
+                  <Text style={[styles.saveBtnText, isSaved && styles.saveBtnTextActive]}>{isSaved ? '🔔 Alerting' : '🔔 Alert me'}</Text>
                 </TouchableOpacity>
               </View>
               <View style={styles.controlsRow}>

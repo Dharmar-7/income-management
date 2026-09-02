@@ -9,6 +9,11 @@ import {
 const UA = 'Mozilla/5.0 (compatible; VeloraJobs/1.0)';
 const TIMEOUT_MS = 9_000;
 
+// The "All locations" option sweeps these major Adzuna markets (plus the
+// worldwide remote boards). Kept to a curated handful — a full 19-country
+// fan-out would multiply Adzuna calls and risk the free-tier quota.
+const ALL_COUNTRIES = ['in', 'us', 'gb', 'ca', 'au'];
+
 // Never throws: a failed/slow source just contributes nothing, so the search
 // still returns whatever the healthy sources gave.
 async function getJson(url: string, headers: Record<string, string> = {}): Promise<any | null> {
@@ -36,6 +41,7 @@ export class JobsService {
   // the job APIs, merged and returned. So it can't wake the database or need a cron.
   async search(dto: SearchJobsDto): Promise<{ jobs: Job[]; count: number; sources: string[] }> {
     const country = (dto.country || 'in').toLowerCase();
+    const allCountries = country === 'all';
     const remoteOnly = dto.remote === true;
     const page = dto.page && dto.page > 1 ? dto.page : 1;
 
@@ -49,10 +55,23 @@ export class JobsService {
     // "load more" (page>1) pulls the next Adzuna page and appends it client-side.
     const withBoards = page === 1;
 
+    // Adzuna is per-country. Normally one country; "All" fans out over the major
+    // markets and merges. Remote-only skips Adzuna entirely.
+    const fetchAdzunaAll = async (): Promise<Job[]> => {
+      if (remoteOnly) return [];
+      if (allCountries) {
+        const batches = await Promise.all(
+          ALL_COUNTRIES.map(cc => this.fetchAdzuna({ ...dto, what: adzunaWhat }, cc, page)),
+        );
+        return batches.flat();
+      }
+      return this.fetchAdzuna({ ...dto, what: adzunaWhat }, country, page);
+    };
+
     // Remote-only leans on the three purpose-built remote boards; on-site/worldwide
-    // brings in Adzuna for the chosen country.
+    // brings in Adzuna for the chosen country (or all major markets).
     const [adzuna, remotive, remoteok, arbeitnow] = await Promise.all([
-      remoteOnly ? Promise.resolve<Job[]>([]) : this.fetchAdzuna({ ...dto, what: adzunaWhat }, country, page),
+      fetchAdzunaAll(),
       withBoards ? this.fetchRemotive(dto) : Promise.resolve<Job[]>([]),
       withBoards ? this.fetchRemoteOK() : Promise.resolve<Job[]>([]),
       withBoards ? this.fetchArbeitnow() : Promise.resolve<Job[]>([]),
