@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Platform, PermissionsAndroid,
   Modal, TextInput,
 } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import * as DocumentPicker from 'expo-document-picker';
 import Constants from 'expo-constants';
@@ -41,6 +42,17 @@ interface SmsSyncResult {
 export default function ImportScreen() {
   const { theme: c } = useTheme();
   const { getToken } = useAuth();
+  const qc = useQueryClient();
+
+  // After anything writes new transactions, drop the stale caches so the
+  // Transactions tab (and the dashboard/bank strip) show the fresh rows the next
+  // time they're opened, instead of their 2-minute cached list.
+  function refreshAfterImport() {
+    qc.invalidateQueries({ queryKey: ['transactions'] });
+    qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['banks'] });
+    qc.invalidateQueries({ queryKey: ['tx-history'] }); // Velora Brain's history
+  }
 
   // ── Import state ─────────────────────────────────────────────────────────
   const [importStatus, setImportStatus] = useState<ImportStatus>('idle');
@@ -84,6 +96,7 @@ export default function ImportScreen() {
         headers: { Authorization: `Bearer ${atmToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: atm.amount, source: 'ATM', date: atm.date, note: 'ATM withdrawal (from SMS)' }),
       });
+      qc.invalidateQueries({ queryKey: ['dashboard'] }); // cash balance feeds the dashboard
     } catch { /* silent — user can add manually */ }
   }
 
@@ -130,8 +143,13 @@ export default function ImportScreen() {
       });
       const { sinceMs } = await lastSyncRes.json();
 
+      // The library does `module.exports = NativeModules.Sms` (CommonJS, no default export).
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const SmsAndroid = require('react-native-get-sms-android').default;
+      const smsModule = require('react-native-get-sms-android');
+      const SmsAndroid = smsModule?.default ?? smsModule;
+      if (!SmsAndroid?.list) {
+        throw new Error('SMS reader is not available in this build. Please install the latest Velora APK.');
+      }
       const rawMessages: Array<{ body: string; date: number; address: string }> =
         await new Promise((resolve, reject) => {
           SmsAndroid.list(
@@ -164,6 +182,7 @@ export default function ImportScreen() {
       const result: SmsSyncResult = await syncRes.json();
       setSmsResult(result);
       setSmsStatus('done');
+      refreshAfterImport();
 
       if (result.atmTransactions.length > 0 && token) {
         setAtmList(result.atmTransactions);
@@ -216,6 +235,7 @@ export default function ImportScreen() {
       const data: ImportResult = await res.json();
       setImportResult(data);
       setImportStatus('success');
+      refreshAfterImport();
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Something went wrong.');
       setImportStatus('error');
@@ -345,6 +365,7 @@ export default function ImportScreen() {
       const result: ImportResult = await res.json();
       setStmtResult(result);
       setStmtStatus('success');
+      refreshAfterImport();
     } catch (err) {
       setStmtError(err instanceof Error ? err.message : 'Something went wrong.');
       setStmtStatus('error');
