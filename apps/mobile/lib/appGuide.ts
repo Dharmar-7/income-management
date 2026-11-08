@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
       'Two real payments of the same amount on the same day are no longer merged into one.',
       'SMS transactions are tagged to your IOB / TMB bank (with its colour) when the bank name matches.',
       'You can now delete any transaction, including imported ones (🗑️ on each row).',
+      'Transactions: new source filter (📩 SMS / ✍️ Manual / 📄 Statement) to see only, say, your SMS-imported transactions.',
       'Fixed: "Sync Bank SMS" crashed with an error instead of reading your messages.',
     ],
   },

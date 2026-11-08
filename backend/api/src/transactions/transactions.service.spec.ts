@@ -82,6 +82,27 @@ describe('TransactionsService', () => {
       prisma.user.findUnique.mockResolvedValue(MOCK_USER);
     });
 
+    it('filters by source (e.g. only SMS transactions)', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.findAll(CLERK_ID, {
+        page: 1, limit: 20, sortBy: 'date', sortOrder: 'desc', source: ImportSource.SMS,
+      });
+
+      expect(prisma.transaction.findMany.mock.calls[0][0].where.source).toBe(ImportSource.SMS);
+      expect(prisma.transaction.count.mock.calls[0][0].where.source).toBe(ImportSource.SMS);
+    });
+
+    it('does not filter by source when none is given', async () => {
+      prisma.transaction.findMany.mockResolvedValue([]);
+      prisma.transaction.count.mockResolvedValue(0);
+
+      await service.findAll(CLERK_ID, { page: 1, limit: 20, sortBy: 'date', sortOrder: 'desc' });
+
+      expect(prisma.transaction.findMany.mock.calls[0][0].where).not.toHaveProperty('source');
+    });
+
     it('returns paginated transactions with meta', async () => {
       const fakeTransactions = [
         { id: 'tx-1', merchant: 'Swiggy', amount: 450, type: TransactionType.DEBIT },

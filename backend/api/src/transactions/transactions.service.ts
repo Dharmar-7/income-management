@@ -9,6 +9,7 @@ export interface TransactionFilters {
   search?: string;
   categoryId?: string;
   type?: TransactionType;
+  source?: ImportSource;   // where it came from: SMS, MANUAL, STATEMENT, …
   dateFrom?: Date;
   dateTo?: Date;
   sortBy: 'date' | 'amount';
@@ -29,7 +30,7 @@ export class TransactionsService {
     const userId = await this.resolveUserId(clerkId);
     const {
       page, limit, search, categoryId,
-      type, dateFrom, dateTo, sortBy, sortOrder,
+      type, source, dateFrom, dateTo, sortBy, sortOrder,
     } = filters;
 
     const where = {
@@ -39,6 +40,7 @@ export class TransactionsService {
       }),
       ...(categoryId && { categoryId }),
       ...(type && { type }),
+      ...(source && { source }),
       ...((dateFrom || dateTo) && {
         date: {
           ...(dateFrom && { gte: dateFrom }),

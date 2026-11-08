@@ -12,7 +12,7 @@ import {
 import { TransactionsService } from './transactions.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, ImportSource } from '@prisma/client';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 
@@ -36,6 +36,7 @@ export class TransactionsController {
     @Query('search') search?: string,
     @Query('categoryId') categoryId?: string,
     @Query('type') type?: string,
+    @Query('source') source?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('sortBy') sortBy?: string,
@@ -48,6 +49,8 @@ export class TransactionsController {
       search,
       categoryId,
       type: type as TransactionType | undefined,
+      // Unknown values are ignored rather than matching nothing.
+      source: (Object.values(ImportSource) as string[]).includes(source ?? '') ? (source as ImportSource) : undefined,
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
       sortBy: (sortBy === 'amount' ? 'amount' : 'date') as 'date' | 'amount',

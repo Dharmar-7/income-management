@@ -83,6 +83,8 @@ export default function TransactionsScreen() {
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
   const [type, setType] = useState('');
+  // Where the transaction came from ('' = any): bank SMS, typed in, or a statement.
+  const [source, setSource] = useState<'' | 'SMS' | 'MANUAL' | 'STATEMENT'>('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [showSheet, setShowSheet] = useState(false);
   const [editingTx, setEditingTx] = useState<EditingTransaction | null>(null);
@@ -154,10 +156,11 @@ export default function TransactionsScreen() {
     sortOrder,
     ...(search && { search }),
     ...(type && { type }),
+    ...(source && { source }),
   });
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['transactions', page, search, type, sortOrder],
+    queryKey: ['transactions', page, search, type, source, sortOrder],
     queryFn: async () => {
       const token = await getToken();
       return apiFetch<TransactionsResponse>(`/transactions?${params}`, token!);
@@ -250,6 +253,30 @@ export default function TransactionsScreen() {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Source chips: where the transaction came from */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.sourceRow}
+        contentContainerStyle={{ gap: 8, paddingHorizontal: 12 }}
+      >
+        {([
+          ['', 'All sources'],
+          ['SMS', '📩 SMS'],
+          ['MANUAL', '✍️ Manual'],
+          ['STATEMENT', '📄 Statement'],
+        ] as const).map(([value, label]) => (
+          <TouchableOpacity
+            key={value || 'any'}
+            onPress={() => { hSelect(); setSource(value); setPage(1); }}
+            style={[styles.chip, source === value && styles.chipActive]}
+            accessibilityState={{ selected: source === value }}
+          >
+            <Text style={[styles.chipText, source === value && styles.chipTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
 
       {/* Banks strip — colour + last-activity date per bank */}
       {banks && banks.length > 0 && (
@@ -358,7 +385,9 @@ export default function TransactionsScreen() {
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>📭</Text>
               <Text style={styles.emptyText}>No transactions found.</Text>
-              {search ? <Text style={styles.emptyHint}>Try a different search term.</Text> : null}
+              {search ? <Text style={styles.emptyHint}>Try a different search term.</Text>
+                : source === 'SMS' ? <Text style={styles.emptyHint}>No SMS transactions yet. Run More → Import → Sync Bank SMS once; after that they come in automatically.</Text>
+                : null}
             </View>
           }
           ListFooterComponent={
@@ -425,6 +454,7 @@ const makeStyles = (c: Theme) => StyleSheet.create({
 
   filterRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 4 },
   chips: { flex: 1 },
+  sourceRow: { flexGrow: 0, marginBottom: 6 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 99,
     backgroundColor: c.card, borderWidth: 1, borderColor: c.inputBorder,
