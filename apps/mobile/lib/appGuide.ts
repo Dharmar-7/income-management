@@ -13,6 +13,42 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-10-05',
+    title: '🧠 Velora Brain & 🧭 Investment Coach',
+    points: [
+      'Velora Brain (More → Money): a private money expert that works on your phone, free, with no AI and nothing sent anywhere.',
+      'Ask: type questions like "How much did I spend on food last month?", "Can I afford 50k?" or "What are my subscriptions?" and get answers from your own data.',
+      'Insights: this month\'s pace and month-end forecast, what changed vs usual, unusual spends, repeating charges (with price rises), and your savings rate.',
+      'Planners: "Can I afford it?", a goal planner with expected returns, and a loan payoff comparison (avalanche vs snowball) showing the interest you\'d save.',
+      'Tax: old vs new regime side by side for your income and deductions, with the break-even point.',
+      'Investment Coach: rules and maths about investing from your own data, never stock tips or market predictions.',
+      'Readiness check: emergency fund, high-interest debt, insurance, then regular investing. It shows which step you\'re on.',
+      'Your investment mix vs a target for your age and risk comfort, with rebalancing and too-much-in-one-stock warnings.',
+      'Each goal matched to the right kind of investment for its timeline, plus how much to set aside per month.',
+      'A money calendar: PPF before the 5th, 80C by 31 March, tax-free gain harvesting, ITR in July, and more, adapted to your tax regime.',
+    ],
+  },
+  {
+    date: '2026-10-03',
+    title: '🔄 Fresh imports, more job types & countries',
+    points: [
+      'After you import a statement, Google Pay file, or bank SMS, the Transactions list and dashboard now refresh automatically — no more stale list.',
+      'Jobs: two new types to filter by — Freelance and Temporary — for flexible, as-needed work alongside full-time, part-time, contract and internship.',
+'Jobs: pick from 80+ countries worldwide (incl. 🇯🇵 Japan, 🇰🇷 Korea, 🇦🇪 UAE) in a new searchable location picker — and select up to 5 at once. Powered by extra job sources beyond the original provider.',
+    ],
+  },
+  {
+    date: '2026-09-03',
+    title: '✨ Little touches everywhere',
+    points: [
+      'The app now gives a gentle buzz when you tick a habit, save something, or delete — actions feel confirmed.',
+      'A small pop-up (with an Undo) appears when you save, remove or delete, so nothing vanishes silently.',
+      'Swipe a saved job, article or application left to remove it — with an Undo if you change your mind.',
+      'Lists show soft placeholder cards while loading instead of a blank screen, and re-tapping a tab jumps back to the top.',
+      'Jobs remembers your last filters, and a fuller Home greeting greets you by the time of day.',
+    ],
+  },
+  {
     date: '2026-09-02',
     title: '💰 Money alerts, calmer news & a job tracker',
     points: [
@@ -138,12 +174,14 @@ export const GUIDE: GuideSection[] = [
     items: [
       { icon: '💰', title: 'Savings & Investments', what: 'Track SIPs, stocks, FDs, gold and goals, with current value and gain/loss.' },
       { icon: '📊', title: 'Net worth', what: 'Everything you own, trended over time.' },
+      { icon: '🧭', title: 'Investment Coach', what: 'Investing guidance from rules and maths: are you ready to invest, how your mix compares to a target for your age, which kind of investment suits each goal, and a month-by-month money calendar. Educational, with no predictions or stock tips.', how: 'Set up your money profile (age, risk comfort, tax regime) once. It stays on your phone.' },
       { icon: '📈', title: 'Stock Check', what: 'Enter a stock’s numbers for a Strong/Mixed/Weak read on its fundamentals, plus growth & value meters. Sector-aware, and educational only — not buy/sell advice.', how: 'Grab the figures from a site like Screener.in.' },
     ],
   },
   {
     title: 'Plan & protect',
     items: [
+      { icon: '🧠', title: 'Velora Brain', what: 'Your private money expert: ask questions about your money, see insights (pace, unusual spends, repeating charges, savings rate), use planners (afford it? goals, loan payoff) and compare tax regimes. All worked out on your phone from your own data.', how: 'More → Money → Brain. Try "Where did my money go last month?" in the Ask tab.' },
       { icon: '🛟', title: 'Safety Net', what: 'How many months you could cover essentials if income stopped — with ways to stretch it and a first-week plan.', how: 'Set your emergency fund on the screen for an accurate runway.' },
       { icon: '🆘', title: 'Emergency Mode', what: 'A Settings switch that leads your Home with the survival view. Turn it off when you’re back on your feet.' },
       { icon: '📄', title: 'Reports', what: 'Monthly and yearly summaries, your top categories, and a CSV export.' },
@@ -164,7 +202,7 @@ export const GUIDE: GuideSection[] = [
   {
     title: 'Career (opt-in)',
     items: [
-      { icon: '💼', title: 'Job Finder', what: 'Search jobs worldwide by role and/or company, filter by location (remote + 19 countries), job type, experience and salary, save searches and get alerts for new matches.', how: 'Turn on in Settings → Features.' },
+      { icon: '💼', title: 'Job Finder', what: 'Search jobs worldwide by role and/or company, filter by location (remote, or pick up to 5 of 80+ countries including Japan, Korea & the UAE), job type (full-time, part-time, contract, freelance, temporary, internship), experience and salary, save searches and get alerts for new matches.', how: 'Turn on in Settings → Features. Remote covers the whole world; on-site pulls from multiple job sources per country.' },
       { icon: '🎯', title: 'ATS Check', what: 'Score your resume against a job description, offline — see matched/missing keywords and concrete fixes.' },
     ],
   },

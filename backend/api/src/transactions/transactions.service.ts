@@ -69,6 +69,34 @@ export class TransactionsService {
     };
   }
 
+  // Compact transaction history for on-device analysis (Velora Brain insights,
+  // planners and the ask box). ONE query on the (userId, date) index with only
+  // the fields the analysis needs — instead of the device paging /transactions
+  // 100 rows at a time, which costs a slow cross-region round-trip per page.
+  // Window is clamped to 1–24 months and rows are capped to bound the payload.
+  async getHistory(clerkId: string, months: number) {
+    const userId = await this.resolveUserId(clerkId);
+    const m = Math.min(Math.max(Math.floor(months) || 12, 1), 24);
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() - m, 1); // start of the month, m months back
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: { userId, date: { gte: from } },
+      select: { id: true, amount: true, merchant: true, date: true, type: true, categoryId: true },
+      orderBy: { date: 'desc' },
+      take: TransactionsService.HISTORY_CAP,
+    });
+
+    return {
+      from,
+      months: m,
+      truncated: transactions.length === TransactionsService.HISTORY_CAP,
+      transactions,
+    };
+  }
+
+  static readonly HISTORY_CAP = 5000;
+
   // Summary — total income, expenses, net savings for the current month (or all time)
   async getSummary(clerkId: string, month?: number, year?: number) {
     const userId = await this.resolveUserId(clerkId);

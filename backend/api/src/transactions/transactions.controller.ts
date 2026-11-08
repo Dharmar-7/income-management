@@ -89,6 +89,13 @@ export class TransactionsController {
     return this.service.getByMonth(userId);
   }
 
+  // GET /transactions/history?months=12 — compact rows for on-device analysis
+  // (Velora Brain). Declared before ':id' so 'history' isn't read as an id.
+  @Get('history')
+  getHistory(@CurrentUser() userId: string, @Query('months') months?: string) {
+    return this.service.getHistory(userId, toInt(months, 12));
+  }
+
   // GET /transactions/categories — list all categories for dropdown
   @Get('categories')
   getCategories() {

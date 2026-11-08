@@ -10,6 +10,8 @@ import VeloraGem from '@/components/VeloraGem';
 import { useTheme } from '@/context/ThemeContext';
 import { useJobFinder } from '@/lib/useJobFinder';
 import { useEmergencyMode } from '@/lib/useEmergencyMode';
+import { useGuideSeen } from '@/lib/appGuide';
+import { hSelect } from '@/lib/haptics';
 
 const MAIN = ['index', 'transactions', 'budgets', 'savings'] as const;
 type MainRoute = (typeof MAIN)[number];
@@ -35,11 +37,13 @@ const MORE_GROUPS = [
   {
     title: 'Money',
     items: [
+      { label: 'Brain',       icon: '🧠', route: 'brain'       },
       { label: 'Safety Net',  icon: '🛟', route: 'safety-net' },
       { label: 'Recurring',   icon: '🔄', route: 'recurring'   },
       { label: 'Loans',       icon: '🏦', route: 'loans'       },
       { label: 'Settlements', icon: '🤝', route: 'settlements' },
       { label: 'Reports',     icon: '📊', route: 'reports'     },
+      { label: 'Coach',       icon: '🧭', route: 'coach'       },
       { label: 'Stock Check', icon: '📈', route: 'stock-check' },
       { label: 'Import',      icon: '📥', route: 'import'      },
     ],
@@ -89,6 +93,7 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
   const active = state.routes[state.index]?.name;
   const { enabled: jobsEnabled } = useJobFinder();
   const { enabled: emergencyEnabled } = useEmergencyMode();
+  const { unseenCount } = useGuideSeen(); // > 0 → a "new" dot on the More gem
 
   // Safety Net only appears in the menu once Emergency Mode is turned on.
   const scoped = emergencyEnabled
@@ -105,6 +110,7 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
   function jumpTo(name: string) {
     const target = state.routes.find(r => r.name === name);
     if (!target) return;
+    hSelect();
     const ev = navigation.emit({ type: 'tabPress', target: target.key, canPreventDefault: true });
     if (!ev.defaultPrevented) {
       navigation.dispatch({ type: 'JUMP_TO', payload: { name } });
@@ -164,12 +170,14 @@ export default function GlowStripTabBar({ state, navigation }: BottomTabBarProps
           <TabItem icon={ICONS.transactions} label={LABELS.transactions} active={active === 'transactions'} dark={dark} onPress={() => jumpTo('transactions')} />
 
           {/* Crystal gem — centre tab */}
-          <TouchableOpacity style={s.ti} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
+          <TouchableOpacity style={s.ti} onPress={() => { hSelect(); setOpen(o => !o); }} activeOpacity={0.7}>
             <View style={s.ic}>
               {(gemActive || open) && <View style={s.arc} pointerEvents="none" />}
               <View style={(gemActive || open) ? s.iconGrow : undefined}>
                 <VeloraGem size={20} />
               </View>
+              {/* Unseen "What's New" entries → a small badge to nudge a look at the Guide. */}
+              {unseenCount > 0 && !open && <View style={s.newBadge} pointerEvents="none" />}
             </View>
             <View style={[s.dot, (gemActive || open) && s.dotActive]} />
             <Text style={[s.tabLabel, { color: (gemActive || open) ? '#6366f1' : dark ? 'rgba(255,255,255,0.75)' : '#52525b' }]}>
@@ -255,6 +263,12 @@ const s = StyleSheet.create({
     borderTopColor: '#6366f1',
   },
   iconGrow: { transform: [{ scale: 1.12 }] },
+  newBadge: {
+    position: 'absolute', top: -1, right: 6,
+    width: 9, height: 9, borderRadius: 5,
+    backgroundColor: '#f43f5e',
+    borderWidth: 1.5, borderColor: '#fff',
+  },
   emoji: { fontSize: 18 },
   dot: {
     width: 4, height: 4,

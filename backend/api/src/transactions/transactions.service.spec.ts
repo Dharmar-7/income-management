@@ -328,4 +328,43 @@ describe('TransactionsService', () => {
       await expect(service.remove(CLERK_ID, 'tx-1')).rejects.toThrow(ForbiddenException);
     });
   });
+
+  // ─── getHistory (compact rows for on-device analysis) ─────────────────────
+
+  describe('getHistory', () => {
+    beforeEach(() => {
+      prisma.user.findUnique.mockResolvedValue(MOCK_USER);
+      prisma.transaction.findMany.mockResolvedValue([]);
+    });
+
+    it('runs one query, scoped to the user, selecting only the compact fields', async () => {
+      await service.getHistory(CLERK_ID, 12);
+
+      expect(prisma.transaction.findMany).toHaveBeenCalledTimes(1);
+      const args = prisma.transaction.findMany.mock.calls[0][0];
+      expect(args.where.userId).toBe(MOCK_USER.id);
+      expect(args.select).toEqual({ id: true, amount: true, merchant: true, date: true, type: true, categoryId: true });
+      expect(args.take).toBe(TransactionsService.HISTORY_CAP);
+      expect(args.orderBy).toEqual({ date: 'desc' });
+    });
+
+    it('starts the window at the 1st of the month, N months back', async () => {
+      const res = await service.getHistory(CLERK_ID, 3);
+      const now = new Date();
+      expect(res.from).toEqual(new Date(now.getFullYear(), now.getMonth() - 3, 1));
+      expect(res.months).toBe(3);
+    });
+
+    it('clamps the window to 1–24 months', async () => {
+      expect((await service.getHistory(CLERK_ID, 100)).months).toBe(24);
+      expect((await service.getHistory(CLERK_ID, -5)).months).toBe(1);
+      expect((await service.getHistory(CLERK_ID, NaN)).months).toBe(12);
+    });
+
+    it('flags truncation only when the row cap is hit', async () => {
+      expect((await service.getHistory(CLERK_ID, 12)).truncated).toBe(false);
+      prisma.transaction.findMany.mockResolvedValue(new Array(TransactionsService.HISTORY_CAP).fill({}));
+      expect((await service.getHistory(CLERK_ID, 12)).truncated).toBe(true);
+    });
+  });
 });
