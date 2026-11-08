@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  ActivityIndicator, Platform, PermissionsAndroid,
+  ActivityIndicator, Platform,
   Modal, TextInput,
 } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AppAlert from '@/components/AppAlert';
 import StatementReviewSheet, { type ParsedRow, type CommitRow } from '@/components/StatementReviewSheet';
 import { useTheme } from '@/context/ThemeContext';
+import { runSmsSync, requestSmsPermission, type AtmEntry, type SmsSyncResult } from '@/lib/smsSync';
 
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -26,18 +27,6 @@ interface ImportResult {
   failed: number;
 }
 
-interface AtmEntry {
-  amount: number;
-  date: string;
-  rawSms: string;
-}
-
-interface SmsSyncResult {
-  imported: number;
-  skipped: number;
-  failed: number;
-  atmTransactions: AtmEntry[];
-}
 
 export default function ImportScreen() {
   const { theme: c } = useTheme();
@@ -118,76 +107,27 @@ export default function ImportScreen() {
     setSmsError(null);
     setSmsResult(null);
 
-    const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.READ_SMS,
-      {
-        title: 'Read SMS Permission',
-        message: 'Income Manager needs to read your bank SMS to import transactions automatically.',
-        buttonPositive: 'Allow',
-        buttonNegative: 'Deny',
-      },
-    );
-
-    if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+    if (!(await requestSmsPermission())) {
       setSmsStatus('error');
-      setSmsError('SMS permission denied. Go to Settings → Apps → Income Manager → Permissions to enable it.');
+      setSmsError(
+        'SMS permission is off. Go to Settings → Apps → Velora → Permissions → SMS → Allow.\n\n' +
+        'If the switch is greyed out ("Restricted setting"), open App info → ⋮ → Allow restricted settings first.',
+      );
       return;
     }
 
     try {
-      const token = await getToken();
-
-      setSmsStatus('reading');
-      const lastSyncRes = await fetch(`${API_URL}/sms/last-sync`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const { sinceMs } = await lastSyncRes.json();
-
-      // The library does `module.exports = NativeModules.Sms` (CommonJS, no default export).
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const smsModule = require('react-native-get-sms-android');
-      const SmsAndroid = smsModule?.default ?? smsModule;
-      if (!SmsAndroid?.list) {
-        throw new Error('SMS reader is not available in this build. Please install the latest Velora APK.');
-      }
-      const rawMessages: Array<{ body: string; date: number; address: string }> =
-        await new Promise((resolve, reject) => {
-          SmsAndroid.list(
-            JSON.stringify({ box: 'inbox', minDate: sinceMs, maxCount: 2000 }),
-            (error: string) => reject(new Error(error)),
-            (_count: number, smsList: string) => resolve(JSON.parse(smsList)),
-          );
-        });
-
-      if (rawMessages.length === 0) {
-        setSmsResult({ imported: 0, skipped: 0, failed: 0, atmTransactions: [] });
-        setSmsStatus('done');
-        return;
-      }
-
       setSmsStatus('syncing');
-      const syncRes = await fetch(`${API_URL}/sms/sync`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: rawMessages.map(m => ({ body: m.body, date: m.date, address: m.address })),
-        }),
-      });
-
-      if (!syncRes.ok) {
-        const err = await syncRes.json().catch(() => ({ message: 'Sync failed' }));
-        throw new Error(err.message ?? 'Sync failed');
-      }
-
-      const result: SmsSyncResult = await syncRes.json();
+      const result = await runSmsSync(getToken);
       setSmsResult(result);
       setSmsStatus('done');
       refreshAfterImport();
 
+      const token = await getToken();
       if (result.atmTransactions.length > 0 && token) {
         setAtmList(result.atmTransactions);
         setAtmIdx(0);
-        setAtmToken(token!);
+        setAtmToken(token);
       }
     } catch (err) {
       setSmsStatus('error');
@@ -578,10 +518,12 @@ export default function ImportScreen() {
               )}
 
               <View style={{ backgroundColor: c.inputBg, borderRadius: 12, padding: 12, marginBottom: 16, gap: 4 }}>
-                <Text style={{ fontSize: 12, color: c.textMuted }}>📩 Reads bank SMS from your inbox</Text>
+                <Text style={{ fontSize: 12, color: c.textMuted }}>⚡ Runs automatically each time you open Velora (after the first sync)</Text>
+                <Text style={{ fontSize: 12, color: c.textMuted }}>🔒 Only bank SMS leave your phone, never personal messages</Text>
+                <Text style={{ fontSize: 12, color: c.textMuted }}>🛡️ Ignores OTPs, offers, loan ads and failed payments</Text>
+                <Text style={{ fontSize: 12, color: c.textMuted }}>🏦 Tags IOB / TMB transactions to your bank</Text>
                 <Text style={{ fontSize: 12, color: c.textMuted }}>🔄 Skips transactions already imported</Text>
                 <Text style={{ fontSize: 12, color: c.textMuted }}>🏧 Prompts to add ATM cash to Cash in Hand</Text>
-                <Text style={{ fontSize: 12, color: c.textMuted }}>📅 Only reads SMS since your last sync</Text>
               </View>
 
               {smsStatus === 'idle' && (
@@ -599,7 +541,7 @@ export default function ImportScreen() {
                   <Text style={{ color: c.textMuted, fontSize: 13, marginTop: 12 }}>
                     {smsStatus === 'requesting' && 'Requesting permission…'}
                     {smsStatus === 'reading' && 'Reading SMS inbox…'}
-                    {smsStatus === 'syncing' && 'Importing transactions…'}
+                    {smsStatus === 'syncing' && 'Reading bank SMS and importing…'}
                   </Text>
                 </View>
               )}

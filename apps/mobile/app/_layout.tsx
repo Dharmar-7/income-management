@@ -2,20 +2,21 @@ import * as Sentry from '@sentry/react-native';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { resourceCache } from '@clerk/clerk-expo/resource-cache';
 import { tokenCache } from '@/lib/tokenCache';
-import { QueryClient, keepPreviousData } from '@tanstack/react-query';
+import { QueryClient, keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
-import { ToastProvider } from '@/context/ToastContext';
+import { ToastProvider, useToast } from '@/context/ToastContext';
 import { apiFetch } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
+import { autoSmsSync, smsSupported } from '@/lib/smsSync';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -157,6 +158,68 @@ function NotificationRouter() {
   return null;
 }
 
+// Hands-free bank SMS import: whenever the app opens or returns to the
+// foreground, quietly pull in new bank SMS (throttled to once per 15 min, and
+// only if SMS permission was already granted on the Import screen — it never
+// prompts). New rows refresh the lists and show a toast; ATM withdrawals get a
+// one-tap "Add to cash".
+function SmsAutoSync() {
+  const { isSignedIn, isLoaded, getToken } = useAuth();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const router = useRouter();
+  const running = useRef(false);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !smsSupported()) return;
+
+    const run = async () => {
+      if (running.current) return;
+      running.current = true;
+      try {
+        const res = await autoSmsSync(getToken);
+        if (!res || res.imported === 0) return;
+        for (const key of ['transactions', 'dashboard', 'banks', 'tx-history']) {
+          qc.invalidateQueries({ queryKey: [key] });
+        }
+        const atm = res.atmTransactions;
+        const msg = `📩 Added ${res.imported} transaction${res.imported === 1 ? '' : 's'} from bank SMS`;
+        if (atm.length > 0) {
+          const total = atm.reduce((s, a) => s + a.amount, 0);
+          toast.show(`${msg} · ATM ₹${total.toLocaleString('en-IN')}`, {
+            type: 'success',
+            actionLabel: 'Add to cash',
+            duration: 8000,
+            onAction: async () => {
+              const token = await getToken();
+              if (!token) return;
+              for (const a of atm) {
+                await apiFetch('/cash/add', token, {
+                  method: 'POST',
+                  body: JSON.stringify({ amount: a.amount, source: 'ATM', date: a.date, note: 'ATM withdrawal (from SMS)' }),
+                }).catch(() => {});
+              }
+              qc.invalidateQueries({ queryKey: ['dashboard'] });
+            },
+          });
+        } else {
+          toast.show(msg, { type: 'success', actionLabel: 'View', onAction: () => router.push('/(tabs)/transactions') });
+        }
+      } finally {
+        running.current = false;
+      }
+    };
+
+    run();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') run();
+    });
+    return () => sub.remove();
+  }, [isLoaded, isSignedIn, getToken, qc, toast, router]);
+
+  return null;
+}
+
 // Drives the OS status-bar text colour from the active theme.
 function ThemedStatusBar() {
   const { scheme } = useTheme();
@@ -186,6 +249,7 @@ function RootLayout() {
               <AuthGuard />
               <PushSync />
               <NotificationRouter />
+              <SmsAutoSync />
               <Slot />
             </PersistQueryClientProvider>
           </ClerkProvider>

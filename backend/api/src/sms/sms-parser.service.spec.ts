@@ -361,4 +361,107 @@ describe('SmsParserService', () => {
       expect(tx.type).toBe(TransactionType.CREDIT);
     });
   });
+  // ─── Rejecting non-transactions ───────────────────────────────────────────
+
+  describe('rejects messages that are not completed transactions', () => {
+    it.each([
+      ['a loan offer', 'Congratulations! You are pre-approved for a personal loan of Rs.5,00,000. Apply now.'],
+      ['a credit card offer', 'Get up to Rs.2,000 cashback offer on your new credit card. T&C apply.'],
+      ['an OTP', 'OTP for your txn of Rs.1,500.00 on A/c XX1234 is 482913. Do not share.'],
+      ['a future debit reminder', 'Rs.5,000 will be debited from A/c XX1234 on 10-May for your SIP.'],
+      ['a bill due reminder', 'Your card XX1234 bill of Rs.12,000 is due on 15-May.'],
+      ['a UPI collect request', 'Ramesh has requested money Rs.500 from you via UPI.'],
+      ['a failed transaction', 'Txn of Rs.800 from A/c XX1234 failed. Amount debited will be reversed.'],
+    ])('%s', (_label, body) => {
+      expect(service.parse([makeSms(body)])).toEqual([]);
+    });
+
+    it('ignores SMS from a phone number (a person, not a bank)', () => {
+      const sms = makeSms('Sent Rs.500 to your A/c, please check', { address: '+919876543210' });
+      expect(service.parse([sms])).toEqual([]);
+    });
+
+    it('ignores promotional DLT headers (-P)', () => {
+      const sms = makeSms('Rs.500 credited to your A/c XX1234 as reward', { address: 'VM-OFFERS-P' });
+      expect(service.parse([sms])).toEqual([]);
+    });
+
+    it('needs an account / card / UPI marker', () => {
+      expect(service.parse([makeSms('Rs.500 debited. Thank you.')])).toEqual([]);
+    });
+
+    it('keeps a real alert that ends with a "Not you?" help line', () => {
+      const [tx] = service.parse([makeSms(
+        'Rs.250 debited from A/c XX1234 to swiggy@icici. UPI Ref 412345678901. Not you? Call 18001234 or click https://bank.in/block',
+      )]);
+      expect(tx.amount).toBe(250);
+    });
+  });
+
+  // ─── Direction and amount ─────────────────────────────────────────────────
+
+  describe('direction and amount', () => {
+    it('uses whichever verb comes first ("debited … credited to x@ybl" is a debit)', () => {
+      const [tx] = service.parse([makeSms('Rs.500 debited from A/c XX1234 and credited to ravi@ybl. UPI Ref 412345678901')]);
+      expect(tx.type).toBe(TransactionType.DEBIT);
+      expect(tx.merchant).toBe('Ravi');
+    });
+
+    it('treats a credit-card spend as a debit', () => {
+      const [tx] = service.parse([makeSms('Rs.1,299 spent on your credit card XX9876 at AMAZON on 09-May. Avl limit Rs.45,000')]);
+      expect(tx.type).toBe(TransactionType.DEBIT);
+      expect(tx.amount).toBe(1299);
+      expect(tx.merchant).toBe('AMAZON');
+    });
+
+    it('skips a balance that appears before the amount', () => {
+      const [tx] = service.parse([makeSms('Avl Bal Rs.40,000. Rs.700 debited from A/c XX1234 via UPI. UPI Ref 412345678901')]);
+      expect(tx.amount).toBe(700);
+    });
+
+    it('takes the sender name for a credit ("from NAME")', () => {
+      const [tx] = service.parse([makeSms('Rs.2,000 credited to A/c XX1234 from RAVI KUMAR via IMPS. Ref No 612345678901')]);
+      expect(tx.type).toBe(TransactionType.CREDIT);
+      expect(tx.merchant).toBe('RAVI KUMAR');
+    });
+  });
+
+  // ─── Reference numbers ────────────────────────────────────────────────────
+
+  describe('reference numbers', () => {
+    it('reads the UPI/DR/<ref>/<name> narration', () => {
+      const [tx] = service.parse([makeSms('A/c XX1234 debited Rs.150.00 Info: UPI/DR/412345678901/TEA STALL/okaxis')]);
+      expect(tx.upiRef).toBe('412345678901');
+      expect(tx.merchant).toBe('TEA STALL');
+    });
+
+    it('reads an IMPS/NEFT "Ref No" or UTR', () => {
+      const [tx] = service.parse([makeSms('Rs.10,000 debited from A/c XX1234 via NEFT. UTR: SBIN526129123456')]);
+      expect(tx.upiRef).toBe('SBIN526129123456');
+    });
+  });
+
+  // ─── Bank detection ───────────────────────────────────────────────────────
+
+  describe('bank detection', () => {
+    it('detects IOB from the sender header', () => {
+      const [tx] = service.parse([makeSms('Rs.100 debited from A/c XX1234 via UPI. UPI Ref 412345678901', { address: 'VM-IOBCHN-S' })]);
+      expect(tx.bank).toBe('IOB');
+    });
+
+    it('detects TMB from the sender header', () => {
+      const [tx] = service.parse([makeSms('Rs.100 debited from A/c XX1234 via UPI. UPI Ref 412345678901', { address: 'JD-TMBANK' })]);
+      expect(tx.bank).toBe('TMB');
+    });
+
+    it('detects the bank from its full name in the body', () => {
+      const [tx] = service.parse([makeSms('Tamilnad Mercantile Bank: Rs.100 credited to A/c XX1234. UPI Ref 412345678901', { address: 'AX-ALERTS' })]);
+      expect(tx.bank).toBe('TMB');
+    });
+
+    it('is null when the bank is unknown', () => {
+      const [tx] = service.parse([makeSms('Rs.100 debited from A/c XX1234 via UPI. UPI Ref 412345678901', { address: 'AX-MYBANK' })]);
+      expect(tx.bank).toBeNull();
+    });
+  });
 });

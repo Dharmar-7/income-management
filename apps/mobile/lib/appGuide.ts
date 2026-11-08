@@ -13,6 +13,19 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-08',
+    title: '📩 Automatic bank SMS import',
+    points: [
+      'Bank SMS now import on their own: run "Sync Bank SMS" once (More → Import), then every time you open Velora new IOB / TMB transactions are added automatically.',
+      'Only bank SMS leave your phone. Personal messages are never uploaded.',
+      'Smarter filtering: OTPs, offers, loan ads, payment requests, due-date reminders and failed payments are ignored.',
+      'Two real payments of the same amount on the same day are no longer merged into one.',
+      'SMS transactions are tagged to your IOB / TMB bank (with its colour) when the bank name matches.',
+      'You can now delete any transaction, including imported ones (🗑️ on each row).',
+      'Fixed: "Sync Bank SMS" crashed with an error instead of reading your messages.',
+    ],
+  },
+  {
     date: '2026-10-05',
     title: '🧠 Velora Brain & 🧭 Investment Coach',
     points: [
@@ -185,7 +198,7 @@ export const GUIDE: GuideSection[] = [
       { icon: '🛟', title: 'Safety Net', what: 'How many months you could cover essentials if income stopped — with ways to stretch it and a first-week plan.', how: 'Set your emergency fund on the screen for an accurate runway.' },
       { icon: '🆘', title: 'Emergency Mode', what: 'A Settings switch that leads your Home with the survival view. Turn it off when you’re back on your feet.' },
       { icon: '📄', title: 'Reports', what: 'Monthly and yearly summaries, your top categories, and a CSV export.' },
-      { icon: '📥', title: 'Import', what: 'Turn a PDF or photo of a statement into transactions — parsed on your device, and reviewed before anything is saved.' },
+      { icon: '📥', title: 'Import', what: 'Turn a PDF or photo of a statement into transactions — parsed on your device, and reviewed before anything is saved. On Android, Sync Bank SMS once and new bank SMS are then added automatically whenever you open the app.' },
     ],
   },
   {

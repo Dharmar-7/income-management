@@ -3,7 +3,7 @@ import { SmsSyncService } from './sms-sync.service';
 import { ClerkAuthGuard } from '../auth/clerk.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RawSms } from './sms-parser.service';
-import { IsArray, ValidateNested, IsString, IsNumber } from 'class-validator';
+import { IsArray, ArrayMaxSize, ValidateNested, IsString, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class RawSmsDto implements RawSms {
@@ -19,6 +19,7 @@ class RawSmsDto implements RawSms {
 
 class SmsSyncDto {
   @IsArray()
+  @ArrayMaxSize(5000) // the app pre-filters to bank-looking SMS, so this is generous
   @ValidateNested({ each: true })
   @Type(() => RawSmsDto)
   messages: RawSmsDto[];
