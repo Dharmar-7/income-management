@@ -3,16 +3,23 @@ import { SearchJobsDto } from './dto/search-jobs.dto';
 import {
   Job,
   normalizeAdzuna, normalizeRemotive, normalizeRemoteOK, normalizeArbeitnow,
+  normalizeJooble, normalizeCareerjet, normalizeMuse,
   dedupe, sortByDateDesc, inferLevel, matchesKeyword, matchesCompany, matchesType,
 } from './jobs.util';
+import { COUNTRY_NAME, CAREERJET_LOCALE } from './countries';
 
 const UA = 'Mozilla/5.0 (compatible; VeloraJobs/1.0)';
 const TIMEOUT_MS = 9_000;
 
-// The "All locations" option sweeps these major Adzuna markets (plus the
-// worldwide remote boards). Kept to a curated handful — a full 19-country
-// fan-out would multiply Adzuna calls and risk the free-tier quota.
+// The "All locations" option sweeps these major markets (plus the worldwide
+// remote boards). Kept to a curated handful — a bigger fan-out would multiply
+// external calls and risk the free-tier quotas.
 const ALL_COUNTRIES = ['in', 'us', 'gb', 'ca', 'au'];
+
+// Hard cap on how many countries one search fans out over. Each country costs up
+// to four provider calls, so this bounds both interactive searches and the hourly
+// alert cron against the free-tier quotas. The UI caps selection to match.
+const MAX_COUNTRIES = 5;
 
 // Never throws: a failed/slow source just contributes nothing, so the search
 // still returns whatever the healthy sources gave.
@@ -33,6 +40,27 @@ async function getJson(url: string, headers: Record<string, string> = {}): Promi
   }
 }
 
+// POST variant for providers that take a JSON body (Jooble). Same never-throws
+// contract: a failed source just yields null and contributes nothing.
+async function postJson(url: string, body: unknown): Promise<any | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'User-Agent': UA, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 @Injectable()
 export class JobsService {
   private readonly logger = new Logger(JobsService.name);
@@ -40,50 +68,59 @@ export class JobsService {
   // Stateless: this endpoint never touches Prisma/Neon — it's a pure fan-out to
   // the job APIs, merged and returned. So it can't wake the database or need a cron.
   async search(dto: SearchJobsDto): Promise<{ jobs: Job[]; count: number; sources: string[] }> {
-    const country = (dto.country || 'in').toLowerCase();
-    const allCountries = country === 'all';
     const remoteOnly = dto.remote === true;
     const page = dto.page && dto.page > 1 ? dto.page : 1;
 
-    // When filtering by company, fold the name into Adzuna's keyword so it
-    // surfaces that employer's postings upstream (Adzuna has no free company
-    // param); we still hard-filter by company after merging. Role matching for
-    // the remote boards stays on `what` alone so the role filter isn't loosened.
-    const adzunaWhat = [dto.what, dto.company].map(s => s?.trim()).filter(Boolean).join(' ') || undefined;
-
     // The remote boards aren't paginated, so only fetch them on the first page;
-    // "load more" (page>1) pulls the next Adzuna page and appends it client-side.
+    // "load more" (page>1) pulls the next page of the country providers instead.
     const withBoards = page === 1;
 
-    // Adzuna is per-country. Normally one country; "All" fans out over the major
-    // markets and merges. Remote-only skips Adzuna entirely.
-    const fetchAdzunaAll = async (): Promise<Job[]> => {
-      if (remoteOnly) return [];
-      if (allCountries) {
-        const batches = await Promise.all(
-          ALL_COUNTRIES.map(cc => this.fetchAdzuna({ ...dto, what: adzunaWhat }, cc, page)),
-        );
-        return batches.flat();
-      }
-      return this.fetchAdzuna({ ...dto, what: adzunaWhat }, country, page);
-    };
+    // When filtering by company, fold the name into the keyword so providers
+    // surface that employer's postings upstream (none has a free company param);
+    // we still hard-filter by company after merging. Role matching for the remote
+    // boards stays on `what` alone so the role filter isn't loosened.
+    const adzunaWhat = [dto.what, dto.company].map(s => s?.trim()).filter(Boolean).join(' ') || undefined;
+    const countryDto = { ...dto, what: adzunaWhat };
 
-    // Remote-only leans on the three purpose-built remote boards; on-site/worldwide
-    // brings in Adzuna for the chosen country (or all major markets).
-    const [adzuna, remotive, remoteok, arbeitnow] = await Promise.all([
-      fetchAdzunaAll(),
+    // Resolve which countries to search. Remote-only → none (boards cover it).
+    // 'all' → the curated major markets. Otherwise a comma-separated list from the
+    // picker, deduped and capped so the fan-out can't blow the free-tier quotas.
+    const raw = (dto.country || 'in').toLowerCase();
+    let countries: string[];
+    if (remoteOnly) countries = [];
+    else if (raw === 'all') countries = ALL_COUNTRIES;
+    else countries = [...new Set(raw.split(',').map(s => s.trim()).filter(Boolean))].slice(0, MAX_COUNTRIES);
+
+    // The worldwide remote boards run once per search (page 1), independent of country.
+    const [remotive, remoteok, arbeitnow] = await Promise.all([
       withBoards ? this.fetchRemotive(dto) : Promise.resolve<Job[]>([]),
       withBoards ? this.fetchRemoteOK() : Promise.resolve<Job[]>([]),
       withBoards ? this.fetchArbeitnow() : Promise.resolve<Job[]>([]),
     ]);
 
-    // Boards aren't keyword/salary filtered upstream (except Remotive's search),
-    // so filter them here. Unknown salaries pass a salaryMin filter rather than
-    // being dropped, since most remote boards don't publish pay.
-    let boards = [...remotive, ...remoteok, ...arbeitnow].filter(j => matchesKeyword(j, dto.what));
+    // Per selected country: Adzuna (all pages) + Jooble/Careerjet/The Muse (page 1
+    // only). Each provider no-ops when its key/affiliate id is unset, so this is
+    // safe to always call. Jooble & Careerjet are keyword-filtered upstream (like
+    // Adzuna); The Muse has no keyword param, so it joins the locally-filtered bucket.
+    const perCountry = await Promise.all(countries.map(async cc => {
+      const [adz, joo, car, mus] = await Promise.all([
+        this.fetchAdzuna(countryDto, cc, page),
+        withBoards ? this.fetchJooble(countryDto, cc) : Promise.resolve<Job[]>([]),
+        withBoards ? this.fetchCareerjet(countryDto, cc, page) : Promise.resolve<Job[]>([]),
+        withBoards ? this.fetchMuse(cc) : Promise.resolve<Job[]>([]),
+      ]);
+      return { prefiltered: [...adz, ...joo, ...car], muse: mus };
+    }));
+    const countryPrefiltered = perCountry.flatMap(p => p.prefiltered);
+    const museJobs = perCountry.flatMap(p => p.muse);
+
+    // Boards + The Muse aren't keyword/salary filtered upstream, so filter here.
+    // Unknown salaries pass a salaryMin filter rather than being dropped, since
+    // most of these don't publish pay.
+    let boards = [...remotive, ...remoteok, ...arbeitnow, ...museJobs].filter(j => matchesKeyword(j, dto.what));
     if (dto.salaryMin) boards = boards.filter(j => j.salaryMin == null || j.salaryMin >= dto.salaryMin!);
 
-    let all = [...adzuna, ...boards];
+    let all = [...countryPrefiltered, ...boards];
     if (remoteOnly) all = all.filter(j => j.remote);
     if (dto.level) all = all.filter(j => inferLevel(j.title) === dto.level);
     if (dto.company) all = all.filter(j => matchesCompany(j, dto.company));
@@ -139,5 +176,55 @@ export class JobsService {
     const data = await getJson('https://www.arbeitnow.com/api/job-board-api');
     const results = Array.isArray(data?.data) ? data.data : [];
     return results.map(normalizeArbeitnow).filter(Boolean) as Job[];
+  }
+
+  // Jooble — POST to /api/<key> with keywords + a country name. Skips cleanly
+  // when JOOBLE_API_KEY is unset.
+  private async fetchJooble(dto: SearchJobsDto, country: string): Promise<Job[]> {
+    const key = process.env.JOOBLE_API_KEY;
+    if (!key) return [];
+    const data = await postJson(`https://jooble.org/api/${key}`, {
+      keywords: dto.what ?? '',
+      location: COUNTRY_NAME[country] ?? '',
+    });
+    const results = Array.isArray(data?.jobs) ? data.jobs : [];
+    return results.map(normalizeJooble).filter(Boolean) as Job[];
+  }
+
+  // Careerjet — v4 API: HTTP Basic auth with the publisher API key as the username
+  // and an empty password. The locale picks the country, so we omit `location`
+  // (a country-wide search) — passing a place name can instead return location
+  // suggestions (type 'LOCATIONS'), which we ignore. user_ip/user_agent are
+  // required. Skips when the key is unset.
+  private async fetchCareerjet(dto: SearchJobsDto, country: string, page = 1): Promise<Job[]> {
+    const key = process.env.CAREERJET_API_KEY;
+    if (!key) return [];
+    const p = new URLSearchParams({
+      keywords: dto.what ?? '',
+      locale_code: CAREERJET_LOCALE[country] ?? 'en_GB',
+      page_size: '30',
+      page: String(Math.min(page, 10)), // v4 accepts pages 1–10
+      sort: dto.sortByDate ? 'date' : 'relevance',
+      user_ip: '203.0.113.1',
+      user_agent: UA,
+    });
+    const auth = Buffer.from(`${key}:`).toString('base64');
+    const data = await getJson(`https://search.api.careerjet.net/v4/query?${p.toString()}`, {
+      Authorization: `Basic ${auth}`,
+    });
+    if (data?.type !== 'JOBS' || !Array.isArray(data?.jobs)) return [];
+    return data.jobs.map((r: any) => normalizeCareerjet(r, country)).filter(Boolean) as Job[];
+  }
+
+  // The Muse — GET public API, filtered by a location name. Has no keyword param
+  // (we match keywords locally). MUSE_API_KEY is optional (raises rate limits).
+  private async fetchMuse(country: string): Promise<Job[]> {
+    const p = new URLSearchParams({ page: '1' });
+    if (process.env.MUSE_API_KEY) p.set('api_key', process.env.MUSE_API_KEY);
+    const loc = COUNTRY_NAME[country];
+    if (loc) p.set('location', loc);
+    const data = await getJson(`https://www.themuse.com/api/public/jobs?${p.toString()}`);
+    const results = Array.isArray(data?.results) ? data.results : [];
+    return results.map(normalizeMuse).filter(Boolean) as Job[];
   }
 }

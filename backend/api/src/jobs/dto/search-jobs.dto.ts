@@ -13,8 +13,8 @@ export class SearchJobsDto {
   @IsOptional() @IsString() @MaxLength(100)
   where?: string; // location (Adzuna on-site)
 
-  @IsOptional() @IsString() @MaxLength(3)
-  country?: string; // Adzuna 2-letter code, or 'all' to sweep major markets; defaults to 'in'
+  @IsOptional() @IsString() @MaxLength(80)
+  country?: string; // 2-letter code, a comma-separated list of codes, or 'all'; defaults to 'in'
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100_000_000)
   salaryMin?: number;
@@ -22,8 +22,8 @@ export class SearchJobsDto {
   @IsOptional() @IsIn(['senior', 'mid', 'junior'])
   level?: 'senior' | 'mid' | 'junior';
 
-  @IsOptional() @IsIn(['full_time', 'part_time', 'contract', 'internship'])
-  type?: 'full_time' | 'part_time' | 'contract' | 'internship';
+  @IsOptional() @IsIn(['full_time', 'part_time', 'contract', 'freelance', 'temporary', 'internship'])
+  type?: 'full_time' | 'part_time' | 'contract' | 'freelance' | 'temporary' | 'internship';
 
   @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean()
   remote?: boolean;

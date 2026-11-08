@@ -51,9 +51,16 @@ export class JobAlertsService {
     const dto: SearchJobsDto = { what: s.what, sortByDate: true };
     if (s.company) dto.company = s.company;
     if (s.where === 'remote') dto.remote = true;
-    else if (s.where) dto.country = s.where;
+    else if (s.where) {
+      // A multi-country saved search is fanned out hourly, so cap it harder here
+      // (to the first 2) than an interactive search — keeps the cron well inside
+      // the free provider quotas.
+      dto.country = s.where.split(',').map(c => c.trim()).filter(Boolean).slice(0, 2).join(',') || s.where;
+    }
     if (s.level === 'senior' || s.level === 'mid' || s.level === 'junior') dto.level = s.level;
-    if (s.type === 'full_time' || s.type === 'part_time' || s.type === 'contract' || s.type === 'internship') dto.type = s.type;
+    if (s.type && ['full_time', 'part_time', 'contract', 'freelance', 'temporary', 'internship'].includes(s.type)) {
+      dto.type = s.type as SearchJobsDto['type'];
+    }
     if (s.salaryMin != null) dto.salaryMin = s.salaryMin;
     return dto;
   }

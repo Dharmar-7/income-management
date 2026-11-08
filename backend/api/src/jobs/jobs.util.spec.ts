@@ -1,6 +1,7 @@
 import {
   formatSalary, inferLevel, dedupe, sortByDateDesc, matchesKeyword, matchesCompany, matchesType,
-  normalizeAdzuna, normalizeRemoteOK, normalizeArbeitnow, cleanText, Job,
+  normalizeAdzuna, normalizeRemoteOK, normalizeArbeitnow,
+  normalizeJooble, normalizeCareerjet, normalizeMuse, cleanText, Job,
 } from './jobs.util';
 
 const mk = (over: Partial<Job>): Job => ({
@@ -95,8 +96,73 @@ describe('jobs.util', () => {
       expect(matchesType(mk({ title: 'Software Engineering Intern', type: null }), 'internship')).toBe(true);
       expect(matchesType(mk({ title: 'Software Engineer', type: null }), 'internship')).toBe(false);
     });
+    it('matches freelance by type or title, but not untyped jobs', () => {
+      expect(matchesType(mk({ type: 'freelance' }), 'freelance')).toBe(true);
+      expect(matchesType(mk({ title: 'Freelance Writer', type: null }), 'freelance')).toBe(true);
+      expect(matchesType(mk({ type: null }), 'freelance')).toBe(false);
+    });
+    it('matches temporary/seasonal by type or title, but not untyped jobs', () => {
+      expect(matchesType(mk({ type: 'temporary' }), 'temporary')).toBe(true);
+      expect(matchesType(mk({ title: 'Seasonal Sales Associate', type: null }), 'temporary')).toBe(true);
+      expect(matchesType(mk({ type: null }), 'temporary')).toBe(false);
+    });
     it('passes everything when no type is given', () => {
       expect(matchesType(mk({ type: 'full_time' }), undefined)).toBe(true);
+    });
+  });
+
+  describe('normalizeJooble', () => {
+    it('maps a Jooble row into the unified shape', () => {
+      const j = normalizeJooble({
+        id: 42, title: 'Backend Engineer', company: 'Acme KK', location: 'Tokyo, Japan',
+        salary: '¥8,000,000', type: 'Full-time', snippet: 'Build APIs', link: 'https://jooble.org/x',
+        updated: '2026-10-01T00:00:00Z',
+      });
+      expect(j).toMatchObject({ source: 'Jooble', title: 'Backend Engineer', company: 'Acme KK', url: 'https://jooble.org/x', type: 'full_time' });
+      expect(j?.postedAt).toBe('2026-10-01T00:00:00.000Z');
+    });
+    it('skips rows without a link or title', () => {
+      expect(normalizeJooble({ title: 'x' })).toBeNull();
+    });
+  });
+
+  describe('normalizeCareerjet', () => {
+    it('maps a Careerjet row and parses its human date', () => {
+      const j = normalizeCareerjet({
+        title: 'Data Analyst', company: 'Globex', locations: 'Osaka',
+        salary: '¥6M', description: 'SQL and dashboards', url: 'https://careerjet/x', date: 'Fri, 20 Sep 2024',
+      }, 'jp');
+      expect(j).toMatchObject({ source: 'Careerjet', title: 'Data Analyst', location: 'Osaka' });
+      // Assert the parsed month (not the exact day — toISOString is UTC, so a
+      // local-midnight date can land on the 19th or 20th depending on timezone).
+      expect(j?.postedAt).toMatch(/^2024-09-\d\dT/);
+    });
+    it('falls back to the country name when no location is given', () => {
+      const j = normalizeCareerjet({ title: 'Dev', company: 'C', url: 'u', date: null }, 'jp');
+      expect(j?.location).toBe('Japan');
+    });
+    it('keeps the v4 salary floor only when it is yearly', () => {
+      const yearly = normalizeCareerjet({ title: 'Dev', url: 'u', salary_min: 50000, salary_type: 'Y' }, 'gb');
+      const hourly = normalizeCareerjet({ title: 'Dev', url: 'u', salary_min: 20, salary_type: 'H' }, 'gb');
+      expect(yearly?.salaryMin).toBe(50000);
+      expect(hourly?.salaryMin).toBeNull();
+    });
+  });
+
+  describe('normalizeMuse', () => {
+    it('maps a Muse row, joining location names', () => {
+      const j = normalizeMuse({
+        id: 7, name: 'Product Manager', company: { name: 'Muse Co' }, type: 'Full Time',
+        locations: [{ name: 'Tokyo, Japan' }, { name: 'Remote' }],
+        contents: '<p>Lead products</p>', refs: { landing_page: 'https://themuse/x' },
+        publication_date: '2026-09-15T10:00:00Z',
+      });
+      expect(j).toMatchObject({ source: 'Muse', title: 'Product Manager', url: 'https://themuse/x', type: 'full_time' });
+      expect(j?.location).toBe('Tokyo, Japan, Remote');
+      expect(j?.remote).toBe(true);
+    });
+    it('skips rows without a landing page', () => {
+      expect(normalizeMuse({ name: 'x', refs: {} })).toBeNull();
     });
   });
 

@@ -13,10 +13,22 @@ export interface Job {
   type: string | null;        // full_time / part_time / contract …
   category: string | null;
   description: string | null; // capped plain-text snippet, for "Check my fit" + card preview
-  source: 'Adzuna' | 'Remotive' | 'RemoteOK' | 'Arbeitnow';
+  source: 'Adzuna' | 'Remotive' | 'RemoteOK' | 'Arbeitnow' | 'Jooble' | 'Careerjet' | 'Muse';
   url: string;                // apply / details link
   postedAt: string | null;    // ISO 8601
 }
+
+// The full country catalogue (name + Careerjet locale) lives in ./countries.
+import { COUNTRY_NAME } from './countries';
+
+// Tolerant date→ISO: several providers return human dates ("Fri, 20 Sep 2024").
+function toIso(d?: string | null): string | null {
+  if (!d) return null;
+  const t = Date.parse(d);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
+const REMOTE_RE = /\bremote\b|work from home|wfh|telework|flexible/i;
 
 export type Level = 'senior' | 'mid' | 'junior';
 
@@ -118,6 +130,10 @@ export function matchesType(job: Job, type?: string): boolean {
     case 'full_time':  return t === '' || t.includes('full_time');
     case 'part_time':  return t === '' || t.includes('part_time');
     case 'contract':   return t === '' || /contract|freelance|temporary/.test(t);
+    // Freelance & temporary are opt-in "flexible work" filters, so require a real
+    // match (in the source type or the title) rather than letting untyped jobs pass.
+    case 'freelance':  return /freelance/.test(t) || /\bfreelanc/i.test(job.title);
+    case 'temporary':  return /temporary|\btemp\b|seasonal/.test(t) || /\b(temporary|seasonal)\b/i.test(job.title);
     case 'internship': return /intern/.test(t) || /\bintern(ship)?\b/i.test(job.title);
     default:           return true;
   }
@@ -202,5 +218,73 @@ export function normalizeArbeitnow(r: any): Job | null {
     source: 'Arbeitnow',
     url: r.url,
     postedAt: r.created_at ? new Date(r.created_at * 1000).toISOString() : null,
+  };
+}
+
+// Jooble (POST /api/<key>): worldwide, country-by-country via a `location` name.
+// Keyword-filtered upstream, so no local keyword pass is needed.
+export function normalizeJooble(r: any): Job | null {
+  if (!r?.link || !r?.title) return null;
+  const blob = `${r.title} ${r.location ?? ''} ${r.snippet ?? ''}`;
+  return {
+    id: `jooble:${r.id ?? r.link}`,
+    title: cleanText(r.title),
+    company: cleanText(r.company) || 'Unknown',
+    location: cleanText(r.location) || '',
+    remote: REMOTE_RE.test(blob),
+    salaryMin: null,
+    salary: cleanText(r.salary) || null,
+    type: r.type ? cleanText(r.type).toLowerCase().replace(/[\s-]+/g, '_') : null,
+    category: null,
+    description: clip(cleanText(r.snippet), 1500),
+    source: 'Jooble',
+    url: r.link,
+    postedAt: toIso(r.updated),
+  };
+}
+
+// Careerjet (GET public API): ~90 countries on-site via a locale + location.
+// Keyword-filtered upstream. Its `date` is a human string → toIso().
+export function normalizeCareerjet(r: any, country: string): Job | null {
+  if (!r?.url || !r?.title) return null;
+  const blob = `${r.title} ${r.locations ?? ''} ${r.description ?? ''}`;
+  return {
+    id: `careerjet:${r.url}`,
+    title: cleanText(r.title),
+    company: cleanText(r.company) || 'Unknown',
+    location: cleanText(r.locations) || (COUNTRY_NAME[country] ?? country.toUpperCase()),
+    remote: REMOTE_RE.test(blob),
+    // v4 gives a numeric floor + period; only a yearly figure is comparable to our filter.
+    salaryMin: r.salary_type === 'Y' && typeof r.salary_min === 'number' && r.salary_min > 0 ? r.salary_min : null,
+    salary: cleanText(r.salary) || null,
+    type: null,
+    category: null,
+    description: clip(cleanText(r.description), 1500),
+    source: 'Careerjet',
+    url: r.url,
+    postedAt: toIso(r.date),
+  };
+}
+
+// The Muse (GET public API): has NO keyword param, so these are keyword-filtered
+// locally (like the remote boards). Location filtering is by place name.
+export function normalizeMuse(r: any): Job | null {
+  const url = r?.refs?.landing_page;
+  if (!url || !r?.name) return null;
+  const loc = Array.isArray(r.locations) ? r.locations.map((l: any) => cleanText(l?.name)).filter(Boolean).join(', ') : '';
+  return {
+    id: `muse:${r.id ?? url}`,
+    title: cleanText(r.name),
+    company: cleanText(r.company?.name) || 'Unknown',
+    location: loc,
+    remote: REMOTE_RE.test(loc),
+    salaryMin: null,
+    salary: null,
+    type: r.type ? cleanText(r.type).toLowerCase().replace(/[\s-]+/g, '_') : null,
+    category: Array.isArray(r.categories) && r.categories.length ? cleanText(r.categories[0]?.name) || null : null,
+    description: clip(cleanText(r.contents), 1500),
+    source: 'Muse',
+    url,
+    postedAt: toIso(r.publication_date),
   };
 }
