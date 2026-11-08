@@ -4,12 +4,19 @@ import {
   StyleSheet, ActivityIndicator, RefreshControl, Keyboard, Modal, Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useScrollToTop } from '@react-navigation/native';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiFetch } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
+import { SkeletonList } from '@/components/Skeleton';
+import CountryPicker from '@/components/CountryPicker';
+import { summarizeWhere } from '@/lib/countries';
+import { hSelect, hLight } from '@/lib/haptics';
 import type { Theme } from '@/lib/theme';
 import { useJobSearches, signatureOf, syncSearchesToServer, type SavedSearch } from '@/lib/jobSearches';
 import { useSavedJobs } from '@/lib/bookmarks';
@@ -34,33 +41,9 @@ interface Job {
 }
 interface JobsResponse { jobs: Job[]; count: number; sources: string[] }
 
-// Remote (worldwide, via the remote boards) plus every country Adzuna serves for
-// on-site listings. Adzuna is country-by-country — there's no single "all
-// countries" endpoint — so this list IS the full worldwide on-site coverage.
-const WHERE_OPTIONS = [
-  { key: 'remote', label: '🌍 Remote' },
-  { key: 'all', label: '🌐 All' },
-  { key: 'in', label: '🇮🇳 India' },
-  { key: 'us', label: '🇺🇸 US' },
-  { key: 'gb', label: '🇬🇧 UK' },
-  { key: 'ca', label: '🇨🇦 Canada' },
-  { key: 'au', label: '🇦🇺 Australia' },
-  { key: 'sg', label: '🇸🇬 Singapore' },
-  { key: 'de', label: '🇩🇪 Germany' },
-  { key: 'nl', label: '🇳🇱 Netherlands' },
-  { key: 'fr', label: '🇫🇷 France' },
-  { key: 'ch', label: '🇨🇭 Switzerland' },
-  { key: 'at', label: '🇦🇹 Austria' },
-  { key: 'be', label: '🇧🇪 Belgium' },
-  { key: 'it', label: '🇮🇹 Italy' },
-  { key: 'es', label: '🇪🇸 Spain' },
-  { key: 'pl', label: '🇵🇱 Poland' },
-  { key: 'nz', label: '🇳🇿 New Zealand' },
-  { key: 'br', label: '🇧🇷 Brazil' },
-  { key: 'mx', label: '🇲🇽 Mexico' },
-  { key: 'za', label: '🇿🇦 South Africa' },
-] as const;
-type WhereKey = (typeof WHERE_OPTIONS)[number]['key'];
+// Location is now a free string: 'remote', 'all', or a comma-joined list of
+// country codes (e.g. 'jp,kr'), chosen in the CountryPicker. summarizeWhere()
+// turns it into a short label, and the backend fans out over the codes.
 
 const LEVELS = [
   { key: 'any', label: 'Any' },
@@ -75,6 +58,8 @@ const TYPES = [
   { key: 'full_time', label: 'Full-time' },
   { key: 'part_time', label: 'Part-time' },
   { key: 'contract', label: 'Contract' },
+  { key: 'freelance', label: 'Freelance' },
+  { key: 'temporary', label: 'Temporary' },
   { key: 'internship', label: 'Internship' },
 ] as const;
 type TypeKey = (typeof TYPES)[number]['key'];
@@ -96,7 +81,6 @@ type SortKey = (typeof SORTS)[number]['key'];
 
 const MAX_PAGES = 5; // load-more ceiling (Adzuna pages) — keeps requests bounded
 
-const whereLabel = (k: string) => WHERE_OPTIONS.find(o => o.key === k)?.label ?? k;
 const levelLabel = (k: string) => LEVELS.find(l => l.key === k)?.label ?? k;
 const typeLabel = (k: string) => TYPES.find(t => t.key === k)?.label ?? k;
 
@@ -145,13 +129,13 @@ const SOURCE_COLOR: Record<Job['source'], (c: Theme) => string> = {
   Arbeitnow: c => c.orange,
 };
 
-interface SearchParams { what: string; company?: string; where: WhereKey; level: LevelKey; type: TypeKey; salaryMin?: number }
+interface SearchParams { what: string; company?: string; where: string; level: LevelKey; type: TypeKey; salaryMin?: number }
 
 function buildLabel(p: SearchParams): string {
   const company = p.company?.trim();
   const parts = [p.what.trim() || (company ? `@ ${company}` : 'Any role')];
   if (company && p.what.trim()) parts.push(`@ ${company}`);
-  parts.push(whereLabel(p.where));
+  parts.push(summarizeWhere(p.where));
   if (p.level !== 'any') parts.push(levelLabel(p.level));
   if (p.type !== 'any') parts.push(typeLabel(p.type));
   if (p.salaryMin) parts.push(`≥${p.salaryMin}`);
@@ -179,13 +163,16 @@ export default function JobsScreen() {
   const { stageOf: jobStage, track: trackJob, remove: untrackJob } = useJobTracker();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
   const router = useRouter();
+  const toast = useToast();
   const params = useLocalSearchParams<{ focus?: string; term?: string }>();
   const qc = useQueryClient();
+  const listRef = useRef<FlatList<Job>>(null);
+  useScrollToTop(listRef); // re-tap the Jobs tab → scroll to top
 
   const [role, setRole] = useState('');
   const [showRoleSug, setShowRoleSug] = useState(false);
   const [company, setCompany] = useState('');
-  const [where, setWhere] = useState<WhereKey>('remote');
+  const [where, setWhere] = useState<string>('remote');
   const [level, setLevel] = useState<LevelKey>('any');
   const [type, setType] = useState<TypeKey>('any');
   const [salary, setSalary] = useState('');
@@ -200,6 +187,32 @@ export default function JobsScreen() {
     (postedWithin !== 'any' ? 1 : 0) + (salary.trim() ? 1 : 0);
 
   const roleSuggestions = useMemo(() => suggestRoles(role), [role]);
+
+  // Remember the last-used filters so the screen reopens where you left off,
+  // instead of resetting to Remote / Any every visit. Role & company text are
+  // intentionally NOT persisted — those are per-hunt, the filters are the habit.
+  const filtersLoaded = useRef(false);
+  useEffect(() => {
+    AsyncStorage.getItem('velora-jobs-filters')
+      .then(raw => {
+        if (raw) {
+          const f = JSON.parse(raw) as Partial<{ where: string; level: LevelKey; type: TypeKey; salary: string; postedWithin: PostedKey; sort: SortKey }>;
+          if (f.where) setWhere(f.where);
+          if (f.level) setLevel(f.level);
+          if (f.type) setType(f.type);
+          if (typeof f.salary === 'string') setSalary(f.salary);
+          if (f.postedWithin) setPostedWithin(f.postedWithin);
+          if (f.sort) setSort(f.sort);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { filtersLoaded.current = true; });
+  }, []);
+
+  useEffect(() => {
+    if (!filtersLoaded.current) return; // don't overwrite storage with defaults before the load lands
+    AsyncStorage.setItem('velora-jobs-filters', JSON.stringify({ where, level, type, salary, postedWithin, sort })).catch(() => {});
+  }, [where, level, type, salary, postedWithin, sort]);
 
   // "New since last visit" is computed against a snapshot taken WHEN a search is
   // run (not when data arrives), so the NEW markers don't vanish on re-render
@@ -353,11 +366,11 @@ export default function JobsScreen() {
     setRole(s.what);
     setShowRoleSug(false);
     setCompany(s.company ?? '');
-    setWhere(s.where as WhereKey);
+    setWhere(s.where);
     setLevel(s.level as LevelKey);
     setType((s.type as TypeKey) ?? 'any');
     setSalary(s.salaryMin ? String(s.salaryMin) : '');
-    runWith({ what: s.what, company: s.company, where: s.where as WhereKey, level: s.level as LevelKey, type: (s.type as TypeKey) ?? 'any', salaryMin: s.salaryMin });
+    runWith({ what: s.what, company: s.company, where: s.where, level: s.level as LevelKey, type: (s.type as TypeKey) ?? 'any', salaryMin: s.salaryMin });
   }
 
   function resetFilters() {
@@ -369,9 +382,11 @@ export default function JobsScreen() {
 
   function toggleSave() {
     if (!submitted || !submittedSig) return;
+    hSelect();
     if (isSaved) {
       remove(submittedSig);
       if (trackedIdRef.current === submittedSig) trackedIdRef.current = null;
+      toast.show('Alert turned off');
       return;
     }
     // Seed "seen" with the current results so tracking starts from now (nothing
@@ -388,6 +403,7 @@ export default function JobsScreen() {
     trackedIdRef.current = submittedSig;
     prevSeenRef.current = new Set(resultIds);
     markedRef.current = submittedSig;
+    toast.show('🔔 Alert set — you’ll be pinged on new matches', { type: 'success' });
   }
 
   async function openJob(job: Job) {
@@ -410,6 +426,31 @@ export default function JobsScreen() {
     router.push('/(tabs)/ats');
   }
 
+  function bookmarkJob(item: Job) {
+    const wasSaved = isJobSaved(item.id);
+    hSelect();
+    toggleJobSaved({ id: item.id, title: item.title, company: item.company, location: item.location, remote: item.remote, salary: item.salary, type: item.type, source: item.source, url: item.url, description: item.description, postedAt: item.postedAt });
+    toast.show(wasSaved ? 'Removed from saved' : 'Saved ✓', wasSaved ? {} : { type: 'success' });
+  }
+
+  function hideJob(item: Job) {
+    const isHidden = statusOf(item.id) === 'hidden';
+    hLight();
+    setStatus(item.id, 'hidden'); // toggles: hides if visible, unhides if already hidden
+    if (!isHidden) toast.show('Job hidden', { actionLabel: 'Undo', onAction: () => setStatus(item.id, 'hidden') });
+  }
+
+  function toggleTrack(item: Job, stage: JobStage | undefined) {
+    hLight();
+    if (stage) {
+      untrackJob(item.id);
+      toast.show('Removed from Applied');
+    } else {
+      trackJob({ id: item.id, title: item.title, company: item.company, location: item.location, url: item.url, source: item.source, salary: item.salary });
+      toast.show('📋 Marked applied — track it in Saved → Applied', { type: 'success' });
+    }
+  }
+
   function renderJob({ item }: { item: Job }) {
     const dot = SOURCE_COLOR[item.source](c);
     const when = relativeTime(item.postedAt);
@@ -426,7 +467,7 @@ export default function JobsScreen() {
           {fresh && <View style={styles.newPill}><Text style={styles.newPillText}>🆕 NEW</Text></View>}
           {stage && <View style={[styles.appliedPill, { backgroundColor: stageColor(stage, c) }]}><Text style={styles.appliedPillText}>✓ {stageLabel(stage).toUpperCase()}</Text></View>}
           <TouchableOpacity
-            onPress={() => toggleJobSaved({ id: item.id, title: item.title, company: item.company, location: item.location, remote: item.remote, salary: item.salary, type: item.type, source: item.source, url: item.url, description: item.description, postedAt: item.postedAt })}
+            onPress={() => bookmarkJob(item)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={styles.starBtn}
           >
@@ -451,9 +492,7 @@ export default function JobsScreen() {
         </View>
         <View style={styles.trackRow}>
           <TouchableOpacity
-            onPress={() => (stage
-              ? untrackJob(item.id)
-              : trackJob({ id: item.id, title: item.title, company: item.company, location: item.location, url: item.url, source: item.source, salary: item.salary }))}
+            onPress={() => toggleTrack(item, stage)}
             style={styles.trackBtn}
             activeOpacity={0.7}
           >
@@ -461,7 +500,7 @@ export default function JobsScreen() {
               {stage ? `✓ ${stageLabel(stage)}` : 'Mark applied'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setStatus(item.id, 'hidden')} style={styles.trackBtn} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => hideJob(item)} style={styles.trackBtn} activeOpacity={0.7}>
             <Text style={styles.trackBtnText}>{status === 'hidden' ? 'Unhide' : '🙈 Hide'}</Text>
           </TouchableOpacity>
         </View>
@@ -491,16 +530,27 @@ export default function JobsScreen() {
 
       {/* Filters */}
       <View style={styles.filters}>
-        <TextInput
-          style={styles.input}
-          placeholder="Role or keyword — e.g. React Developer"
-          placeholderTextColor={c.textFaint}
-          value={role}
-          onChangeText={t => { setRole(t); setShowRoleSug(true); }}
-          onFocus={() => setShowRoleSug(true)}
-          returnKeyType="search"
-          onSubmitEditing={runSearch}
-        />
+        <View style={styles.inputWrap}>
+          <TextInput
+            style={[styles.input, styles.inputFlex]}
+            placeholder="Role or keyword — e.g. React Developer"
+            placeholderTextColor={c.textFaint}
+            value={role}
+            onChangeText={t => { setRole(t); setShowRoleSug(true); }}
+            onFocus={() => setShowRoleSug(true)}
+            returnKeyType="search"
+            onSubmitEditing={runSearch}
+          />
+          {role.length > 0 && (
+            <TouchableOpacity
+              onPress={() => { setRole(''); setShowRoleSug(false); }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.inputClear}
+            >
+              <Text style={styles.inputClearText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {showRoleSug && roleSuggestions.length > 0 && (
           <View style={styles.suggestBox}>
@@ -533,7 +583,7 @@ export default function JobsScreen() {
         <View style={styles.bottomRow}>
           <TouchableOpacity style={styles.filtersBtn} onPress={() => setFiltersOpen(true)} activeOpacity={0.8}>
             <Text style={styles.filtersBtnText} numberOfLines={1}>
-              ⚙️ {whereLabel(where)}{activeFilterCount > 0 ? ` · +${activeFilterCount}` : ''}
+              ⚙️ {summarizeWhere(where)}{activeFilterCount > 0 ? ` · +${activeFilterCount}` : ''}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.searchBtn} onPress={runSearch} activeOpacity={0.85}>
@@ -564,10 +614,7 @@ export default function JobsScreen() {
           <Text style={styles.centerText}>Search by role, company, location, salary, type and experience — then tap 🔔 Alert me to be notified whenever new matching jobs are posted.</Text>
         </View>
       ) : query.isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={c.primary} />
-          <Text style={styles.centerText}>Searching across job boards…</Text>
-        </View>
+        <SkeletonList count={6} />
       ) : query.isError ? (
         <ScrollView
           contentContainerStyle={styles.center}
@@ -590,6 +637,7 @@ export default function JobsScreen() {
         </ScrollView>
       ) : (
         <FlatList
+          ref={listRef}
           data={visibleJobs}
           keyExtractor={j => j.id}
           renderItem={renderJob}
@@ -656,7 +704,7 @@ function FiltersModal({
   visible: boolean;
   c: Theme;
   styles: ReturnType<typeof makeStyles>;
-  where: WhereKey; setWhere: (w: WhereKey) => void;
+  where: string; setWhere: (w: string) => void;
   level: LevelKey; setLevel: (l: LevelKey) => void;
   type: TypeKey; setType: (t: TypeKey) => void;
   postedWithin: PostedKey; setPostedWithin: (p: PostedKey) => void;
@@ -665,6 +713,7 @@ function FiltersModal({
   onApply: () => void;
   onClose: () => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
@@ -680,11 +729,11 @@ function FiltersModal({
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetBody}>
             <Text style={styles.filterLabel}>Location</Text>
-            <View style={styles.wrapRow}>
-              {WHERE_OPTIONS.map(o => (
-                <Chip key={o.key} label={o.label} active={where === o.key} c={c} onPress={() => setWhere(o.key)} />
-              ))}
-            </View>
+            <TouchableOpacity style={styles.locationBtn} onPress={() => setPickerOpen(true)} activeOpacity={0.8}>
+              <Text style={styles.locationBtnText} numberOfLines={1}>{summarizeWhere(where)}</Text>
+              <Text style={styles.locationBtnChevron}>▾</Text>
+            </TouchableOpacity>
+            <Text style={styles.filterHint}>Remote, all major markets, or pick up to 5 countries worldwide.</Text>
 
             <Text style={styles.filterLabel}>Job type</Text>
             <View style={styles.wrapRow}>
@@ -726,6 +775,13 @@ function FiltersModal({
           </TouchableOpacity>
         </Pressable>
       </Pressable>
+
+      <CountryPicker
+        visible={pickerOpen}
+        where={where}
+        onApply={setWhere}
+        onClose={() => setPickerOpen(false)}
+      />
     </Modal>
   );
 }
@@ -781,6 +837,10 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
     fontSize: 14, color: c.text,
   },
+  inputWrap: { position: 'relative', justifyContent: 'center' },
+  inputFlex: { paddingRight: 40 },
+  inputClear: { position: 'absolute', right: 6, padding: 8 },
+  inputClearText: { fontSize: 13, fontWeight: '700', color: c.textFaint },
   chipRow: { gap: 8, paddingRight: 8 },
   bottomRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   filtersBtn: {
@@ -815,6 +875,13 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   sheetBody: { paddingVertical: 8, gap: 8 },
   filterLabel: { fontSize: 12, fontWeight: '800', color: c.textFaint, letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 8 },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  locationBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: c.inputBg, borderWidth: 1, borderColor: c.inputBorder,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
+  },
+  locationBtnText: { fontSize: 14, fontWeight: '700', color: c.text, flex: 1 },
+  locationBtnChevron: { fontSize: 14, color: c.textFaint, marginLeft: 8 },
   filterHint: { fontSize: 11.5, color: c.textFaint, lineHeight: 16, marginTop: 2 },
   applyBtn: { backgroundColor: c.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 12 },
   applyBtnText: { color: c.onColor, fontSize: 15, fontWeight: '800' },
