@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionType, ImportSource } from '@prisma/client';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -324,17 +324,26 @@ export class TransactionsService {
     }
   }
 
-  // Delete a manual transaction (imported ones cannot be deleted)
+  // Delete any of the user's transactions — manual or imported (SMS/statement),
+  // e.g. a mis-parsed SMS. Loan payments, saving contributions and settlements
+  // hold a bare transactionId (no FK), so unlink those in the same DB transaction
+  // rather than leave them pointing at a row that no longer exists.
   async remove(clerkId: string, transactionId: string) {
     const userId = await this.resolveUserId(clerkId);
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId, userId },
+      select: { id: true },
     });
     if (!tx) throw new NotFoundException('Transaction not found.');
-    if (tx.source !== ImportSource.MANUAL) {
-      throw new ForbiddenException('Only manually entered transactions can be deleted.');
-    }
-    await this.prisma.transaction.delete({ where: { id: transactionId } });
+    const id = tx.id;
+    await this.prisma.$transaction([
+      this.prisma.loanPayment.updateMany({ where: { transactionId: id }, data: { transactionId: null } }),
+      this.prisma.savingContribution.updateMany({ where: { transactionId: id }, data: { transactionId: null } }),
+      this.prisma.settlementEntry.updateMany({ where: { transactionId: id }, data: { transactionId: null } }),
+      this.prisma.settlement.updateMany({ where: { originalTxId: id }, data: { originalTxId: null } }),
+      this.prisma.settlement.updateMany({ where: { repaymentTxId: id }, data: { repaymentTxId: null } }),
+      this.prisma.transaction.delete({ where: { id } }),
+    ]);
     return { message: 'Transaction deleted.' };
   }
 }

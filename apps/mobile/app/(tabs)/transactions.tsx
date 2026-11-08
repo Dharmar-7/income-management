@@ -120,10 +120,12 @@ export default function TransactionsScreen() {
     setEditingTx(null);
   }
 
-  function handleDelete(id: string) {
+  function handleDelete(id: string, imported = false) {
     setAlertData({
       title: 'Delete Transaction',
-      message: 'Are you sure? This cannot be undone.',
+      message: imported
+        ? 'Are you sure? This cannot be undone.\n\nIf you import the same bank statement again, this transaction may come back.'
+        : 'Are you sure? This cannot be undone.',
       confirmLabel: 'Delete',
       confirmDestructive: true,
       onConfirm: async () => {
@@ -339,21 +341,16 @@ export default function TransactionsScreen() {
                   : null]}>
                   {tx.type === 'CREDIT' ? '+' : tx.type === 'REFUND' ? '↩' : tx.type === 'INVESTMENT' ? '→' : '-'}{formatINR(tx.amount)}
                 </Text>
-                {tx.source === 'MANUAL' ? (
-                  <TouchableOpacity
-                    onPress={() => handleDelete(tx.id)}
-                    disabled={deletingId === tx.id}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Text style={styles.deleteBtn}>
-                      {deletingId === tx.id ? '…' : '🗑️'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={styles.typeLabel}>
-                    {tx.type === 'CREDIT' ? 'Income' : 'Expense'}
+                <TouchableOpacity
+                  onPress={() => handleDelete(tx.id, tx.source !== 'MANUAL')}
+                  disabled={deletingId === tx.id}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel={`Delete ${tx.merchant}`}
+                >
+                  <Text style={styles.deleteBtn}>
+                    {deletingId === tx.id ? '…' : '🗑️'}
                   </Text>
-                )}
+                </TouchableOpacity>
               </View>
             </TouchableOpacity>
           )}
@@ -475,7 +472,6 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   credit: { color: c.successDeep },
   refund: { color: '#0d9488' },
   investment: { color: c.primaryDeep },
-  typeLabel: { fontSize: 10, color: c.textFaint, marginTop: 2 },
 
   merchantRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
   manualBadge: {

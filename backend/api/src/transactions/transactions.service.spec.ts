@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransactionType, ImportSource } from '@prisma/client';
@@ -25,6 +25,12 @@ function makeMockPrisma() {
     category: {
       findMany: jest.fn(),
     },
+    loanPayment: { updateMany: jest.fn() },
+    savingContribution: { updateMany: jest.fn() },
+    settlementEntry: { updateMany: jest.fn() },
+    settlement: { updateMany: jest.fn() },
+    // Array form of $transaction: the ops are already-invoked mock calls, so just await them.
+    $transaction: jest.fn((ops: unknown[]) => Promise.all(ops)),
   };
   // Mirror PrismaService.resolveUserId so existing user.findUnique mocks still drive behaviour
   prisma.resolveUserId = jest.fn(async (clerkId: string) => {
@@ -289,43 +295,46 @@ describe('TransactionsService', () => {
     });
 
     it('deletes a MANUAL transaction and returns a message', async () => {
-      prisma.transaction.findUnique.mockResolvedValue({
-        id: 'tx-1', source: ImportSource.MANUAL, userId: MOCK_USER.id,
-      });
+      prisma.transaction.findUnique.mockResolvedValue({ id: 'tx-1' });
       prisma.transaction.delete.mockResolvedValue({});
 
       const result = await service.remove(CLERK_ID, 'tx-1');
       expect(result).toEqual({ message: 'Transaction deleted.' });
+      expect(prisma.transaction.delete).toHaveBeenCalledWith({ where: { id: 'tx-1' } });
+    });
+
+    it('deletes imported (SMS / statement) transactions too', async () => {
+      prisma.transaction.findUnique.mockResolvedValue({ id: 'tx-sms' });
+      prisma.transaction.delete.mockResolvedValue({});
+
+      await service.remove(CLERK_ID, 'tx-sms');
+      expect(prisma.transaction.delete).toHaveBeenCalledWith({ where: { id: 'tx-sms' } });
+    });
+
+    it('only looks the transaction up within the current user', async () => {
+      prisma.transaction.findUnique.mockResolvedValue({ id: 'tx-1' });
+      await service.remove(CLERK_ID, 'tx-1');
+      expect(prisma.transaction.findUnique.mock.calls[0][0].where).toEqual({ id: 'tx-1', userId: MOCK_USER.id });
+    });
+
+    it('unlinks loan payments, saving contributions and settlements in the same DB transaction', async () => {
+      prisma.transaction.findUnique.mockResolvedValue({ id: 'tx-1' });
+      await service.remove(CLERK_ID, 'tx-1');
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      const unlink = { data: { transactionId: null }, where: { transactionId: 'tx-1' } };
+      expect(prisma.loanPayment.updateMany).toHaveBeenCalledWith(unlink);
+      expect(prisma.savingContribution.updateMany).toHaveBeenCalledWith(unlink);
+      expect(prisma.settlementEntry.updateMany).toHaveBeenCalledWith(unlink);
+      expect(prisma.settlement.updateMany).toHaveBeenCalledWith({ where: { originalTxId: 'tx-1' }, data: { originalTxId: null } });
+      expect(prisma.settlement.updateMany).toHaveBeenCalledWith({ where: { repaymentTxId: 'tx-1' }, data: { repaymentTxId: null } });
     });
 
     it('throws NotFoundException when transaction does not exist', async () => {
       prisma.transaction.findUnique.mockResolvedValue(null);
 
       await expect(service.remove(CLERK_ID, 'missing-id')).rejects.toThrow(NotFoundException);
-    });
-
-    it('throws ForbiddenException when trying to delete a TAKEOUT transaction', async () => {
-      prisma.transaction.findUnique.mockResolvedValue({
-        id: 'tx-1', source: ImportSource.TAKEOUT, userId: MOCK_USER.id,
-      });
-
-      await expect(service.remove(CLERK_ID, 'tx-1')).rejects.toThrow(ForbiddenException);
-    });
-
-    it('throws ForbiddenException when trying to delete a GMAIL transaction', async () => {
-      prisma.transaction.findUnique.mockResolvedValue({
-        id: 'tx-1', source: ImportSource.GMAIL, userId: MOCK_USER.id,
-      });
-
-      await expect(service.remove(CLERK_ID, 'tx-1')).rejects.toThrow(ForbiddenException);
-    });
-
-    it('throws ForbiddenException when trying to delete an SMS transaction', async () => {
-      prisma.transaction.findUnique.mockResolvedValue({
-        id: 'tx-1', source: ImportSource.SMS, userId: MOCK_USER.id,
-      });
-
-      await expect(service.remove(CLERK_ID, 'tx-1')).rejects.toThrow(ForbiddenException);
+      expect(prisma.transaction.delete).not.toHaveBeenCalled();
     });
   });
 
