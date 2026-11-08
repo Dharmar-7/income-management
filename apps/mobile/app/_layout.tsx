@@ -13,6 +13,7 @@ import * as Notifications from 'expo-notifications';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
+import { ToastProvider } from '@/context/ToastContext';
 import { apiFetch } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
 
@@ -170,23 +171,25 @@ function RootLayout() {
     // gets clipped by the nav bar.
     <SafeAreaProvider initialMetrics={initialWindowMetrics}>
       <ThemeProvider>
-        <ClerkProvider
-          publishableKey={publishableKey}
-          tokenCache={Platform.OS === 'web' ? undefined : tokenCache}
-          // Persists Clerk's session/user resources so a cold start with no
-          // network keeps the user signed in — without this, Clerk's boot-time
-          // validation call fails offline and the app falls to the sign-in
-          // screen until connectivity returns.
-          __experimental_resourceCache={Platform.OS === 'web' ? undefined : resourceCache}
-        >
-          <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
-            <ThemedStatusBar />
-            <AuthGuard />
-            <PushSync />
-            <NotificationRouter />
-            <Slot />
-          </PersistQueryClientProvider>
-        </ClerkProvider>
+        <ToastProvider>
+          <ClerkProvider
+            publishableKey={publishableKey}
+            tokenCache={Platform.OS === 'web' ? undefined : tokenCache}
+            // Persists Clerk's session/user resources so a cold start with no
+            // network keeps the user signed in — without this, Clerk's boot-time
+            // validation call fails offline and the app falls to the sign-in
+            // screen until connectivity returns.
+            __experimental_resourceCache={Platform.OS === 'web' ? undefined : resourceCache}
+          >
+            <PersistQueryClientProvider client={queryClient} persistOptions={persistOptions}>
+              <ThemedStatusBar />
+              <AuthGuard />
+              <PushSync />
+              <NotificationRouter />
+              <Slot />
+            </PersistQueryClientProvider>
+          </ClerkProvider>
+        </ToastProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

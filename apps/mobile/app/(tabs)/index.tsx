@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import {
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useScrollToTop } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import CashSheet from '@/components/CashSheet';
@@ -91,6 +92,15 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+// Greet by time of day so Home feels a little more alive at each visit.
+function greetingFor(hour: number): string {
+  if (hour < 5) return 'Still up';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Good night';
+}
+
 const CHART_COLORS = [
   '#6366f1', '#f97316', '#06b6d4', '#ef4444', '#22c55e',
   '#ec4899', '#eab308', '#8b5cf6', '#14b8a6', '#f43f5e',
@@ -108,6 +118,9 @@ export default function DashboardScreen() {
   const queryClient = useQueryClient();
   const { enabled: emergencyMode } = useEmergencyMode();
   const [cashMode, setCashMode] = useState<'add' | 'spend' | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  useScrollToTop(scrollRef); // re-tapping the Home tab scrolls back to the top
+  const greeting = greetingFor(new Date().getHours());
 
   // Single aggregate call — replaces 8 parallel queries.
   // The backend fires all DB queries in one Promise.all so wall-clock ≈ slowest single query.
@@ -145,6 +158,7 @@ export default function DashboardScreen() {
         />
       )}
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
@@ -152,7 +166,7 @@ export default function DashboardScreen() {
         {/* Greeting + theme toggle */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.greeting}>Hey, {user?.firstName ?? 'there'} 👋</Text>
+            <Text style={styles.greeting}>{greeting}, {user?.firstName ?? 'there'} 👋</Text>
             {d?.summary && (
               <Text style={styles.subGreeting}>{MONTHS[d.summary.month]} {d.summary.year} summary</Text>
             )}

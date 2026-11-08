@@ -1,13 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useScrollToTop } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
 import type { Theme } from '@/lib/theme';
 import { useSavedJobs, useSavedArticles, type SavedJob, type SavedArticle } from '@/lib/bookmarks';
 import { useJobTracker, STAGES, type TrackedJob, type JobStage } from '@/lib/jobTracker';
+import SwipeRow from '@/components/SwipeRow';
+import { hSelect } from '@/lib/haptics';
 
 type Tab = 'jobs' | 'tracker' | 'articles';
 
@@ -24,10 +29,18 @@ export default function SavedScreen() {
   const { theme: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
   const [tab, setTab] = useState<Tab>('jobs');
+  const router = useRouter();
+  const toast = useToast();
 
   const savedJobs = useSavedJobs();
   const savedArticles = useSavedArticles();
   const tracker = useJobTracker();
+
+  const jobsRef = useRef<FlatList<SavedJob>>(null);
+  const trackerRef = useRef<FlatList<TrackedJob>>(null);
+  const articlesRef = useRef<FlatList<SavedArticle>>(null);
+  // Re-tapping the Saved tab scrolls the visible list back to the top.
+  useScrollToTop(tab === 'jobs' ? jobsRef : tab === 'tracker' ? trackerRef : articlesRef);
 
   async function openUrl(url: string) {
     if (!url) return;
@@ -51,79 +64,103 @@ export default function SavedScreen() {
     }
   }
 
+  // Remove + offer an Undo. We keep the removed record so tapping Undo restores it.
+  function removeJob(item: SavedJob) {
+    savedJobs.remove(item.id);
+    const { savedAt, ...rest } = item;
+    toast.show('Removed from saved', { actionLabel: 'Undo', onAction: () => savedJobs.toggle(rest) });
+  }
+
+  function removeArticle(item: SavedArticle) {
+    savedArticles.remove(item.id);
+    const { savedAt, ...rest } = item;
+    toast.show('Removed from saved', { actionLabel: 'Undo', onAction: () => savedArticles.toggle(rest) });
+  }
+
+  function removeTracked(item: TrackedJob) {
+    tracker.remove(item.id);
+    toast.show('Removed from Applied', { actionLabel: 'Undo', onAction: () => tracker.restore(item) });
+  }
+
   function renderJob({ item }: { item: SavedJob }) {
     return (
-      <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => openUrl(item.url)}>
-        <View style={styles.metaRow}>
-          <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
-          <TouchableOpacity onPress={() => savedJobs.remove(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.starBtn}>
-            <Text style={styles.star}>★</Text>
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-        <Text style={styles.sub} numberOfLines={1}>
-          {item.company}{item.location ? ` · ${item.location}` : ''}
-        </Text>
-        <View style={styles.footer}>
-          <Text style={[styles.link, { color: c.primary }]}>Apply on {item.source} ↗</Text>
-          {item.salary ? <Text style={styles.badge}>💰 {item.salary}</Text> : null}
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
-  function renderArticle({ item }: { item: SavedArticle }) {
-    return (
-      <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => openUrl(item.link)}>
-        <View style={styles.metaRow}>
-          <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
-          <View style={styles.actions}>
-            <TouchableOpacity onPress={() => shareArticle(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.actionIcon}>↗</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => savedArticles.remove(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.star}>★</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        <Text style={styles.title} numberOfLines={3}>{item.title}</Text>
-        {item.summary ? <Text style={styles.sub} numberOfLines={2}>{item.summary}</Text> : null}
-        <Text style={[styles.link, { color: c.primary }]}>Read on {item.source} ↗</Text>
-      </TouchableOpacity>
-    );
-  }
-
-  function renderTracked({ item }: { item: TrackedJob }) {
-    return (
-      <View style={styles.card}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => openUrl(item.url)}>
+      <SwipeRow onDelete={() => removeJob(item)}>
+        <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => openUrl(item.url)}>
           <View style={styles.metaRow}>
             <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
-            <TouchableOpacity onPress={() => tracker.remove(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.removeX}>✕</Text>
+            <TouchableOpacity onPress={() => removeJob(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.starBtn}>
+              <Text style={styles.star}>★</Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
           <Text style={styles.sub} numberOfLines={1}>
             {item.company}{item.location ? ` · ${item.location}` : ''}
           </Text>
+          <View style={styles.footer}>
+            <Text style={[styles.link, { color: c.primary }]}>Apply on {item.source} ↗</Text>
+            {item.salary ? <Text style={styles.badge}>💰 {item.salary}</Text> : null}
+          </View>
         </TouchableOpacity>
-        <View style={styles.stageRow}>
-          {STAGES.map(s => {
-            const on = item.stage === s.key;
-            return (
-              <TouchableOpacity
-                key={s.key}
-                onPress={() => tracker.setStage(item.id, s.key)}
-                style={[styles.stageChip, on && { backgroundColor: stageColor(s.key, c), borderColor: stageColor(s.key, c) }]}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.stageChipText, { color: on ? c.onColor : c.textMuted }]}>{s.label}</Text>
+      </SwipeRow>
+    );
+  }
+
+  function renderArticle({ item }: { item: SavedArticle }) {
+    return (
+      <SwipeRow onDelete={() => removeArticle(item)}>
+        <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => openUrl(item.link)}>
+          <View style={styles.metaRow}>
+            <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
+            <View style={styles.actions}>
+              <TouchableOpacity onPress={() => shareArticle(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.actionIcon}>↗</Text>
               </TouchableOpacity>
-            );
-          })}
+              <TouchableOpacity onPress={() => removeArticle(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.star}>★</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.title} numberOfLines={3}>{item.title}</Text>
+          {item.summary ? <Text style={styles.sub} numberOfLines={2}>{item.summary}</Text> : null}
+          <Text style={[styles.link, { color: c.primary }]}>Read on {item.source} ↗</Text>
+        </TouchableOpacity>
+      </SwipeRow>
+    );
+  }
+
+  function renderTracked({ item }: { item: TrackedJob }) {
+    return (
+      <SwipeRow onDelete={() => removeTracked(item)}>
+        <View style={styles.card}>
+          <TouchableOpacity activeOpacity={0.7} onPress={() => openUrl(item.url)}>
+            <View style={styles.metaRow}>
+              <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
+              <TouchableOpacity onPress={() => removeTracked(item)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.removeX}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.sub} numberOfLines={1}>
+              {item.company}{item.location ? ` · ${item.location}` : ''}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.stageRow}>
+            {STAGES.map(s => {
+              const on = item.stage === s.key;
+              return (
+                <TouchableOpacity
+                  key={s.key}
+                  onPress={() => { hSelect(); tracker.setStage(item.id, s.key); }}
+                  style={[styles.stageChip, on && { backgroundColor: stageColor(s.key, c), borderColor: stageColor(s.key, c) }]}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.stageChipText, { color: on ? c.onColor : c.textMuted }]}>{s.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
-      </View>
+      </SwipeRow>
     );
   }
 
@@ -138,6 +175,12 @@ export default function SavedScreen() {
     tracker: 'No applications tracked yet. Tap “Mark applied” on a job to start.',
     articles: 'No saved articles yet. Tap the ☆ on any story to keep it here.',
   };
+  // A friendly next step right in the empty state, so the screen isn't a dead end.
+  const emptyAction: Record<Tab, { label: string; go: () => void }> = {
+    jobs: { label: '🔎 Find jobs', go: () => router.push('/(tabs)/jobs') },
+    tracker: { label: '🔎 Find jobs', go: () => router.push('/(tabs)/jobs') },
+    articles: { label: '📰 Browse news', go: () => router.push('/(tabs)/news') },
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -146,7 +189,7 @@ export default function SavedScreen() {
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && styles.tabActive]}
-            onPress={() => setTab(t)}
+            onPress={() => { hSelect(); setTab(t); }}
             activeOpacity={0.8}
           >
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]} numberOfLines={1}>{labels[t]}</Text>
@@ -158,9 +201,13 @@ export default function SavedScreen() {
         <View style={styles.center}>
           <Text style={styles.bigEmoji}>{tab === 'tracker' ? '📋' : '🔖'}</Text>
           <Text style={styles.centerText}>{emptyText[tab]}</Text>
+          <TouchableOpacity style={styles.emptyBtn} onPress={emptyAction[tab].go} activeOpacity={0.85}>
+            <Text style={styles.emptyBtnText}>{emptyAction[tab].label}</Text>
+          </TouchableOpacity>
         </View>
       ) : tab === 'jobs' ? (
         <FlatList
+          ref={jobsRef}
           data={savedJobs.items}
           keyExtractor={j => j.id}
           renderItem={renderJob}
@@ -169,6 +216,7 @@ export default function SavedScreen() {
         />
       ) : tab === 'tracker' ? (
         <FlatList
+          ref={trackerRef}
           data={tracker.items}
           keyExtractor={j => j.id}
           renderItem={renderTracked}
@@ -177,6 +225,7 @@ export default function SavedScreen() {
         />
       ) : (
         <FlatList
+          ref={articlesRef}
           data={savedArticles.items}
           keyExtractor={a => a.id}
           renderItem={renderArticle}
@@ -221,4 +270,6 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   center: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   bigEmoji: { fontSize: 40 },
   centerText: { fontSize: 13, color: c.textMuted, textAlign: 'center', lineHeight: 19 },
+  emptyBtn: { marginTop: 4, backgroundColor: c.primary, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 11 },
+  emptyBtnText: { color: c.onColor, fontSize: 14, fontWeight: '700' },
 });

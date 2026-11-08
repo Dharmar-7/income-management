@@ -10,12 +10,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   RefreshControl,
-  ActivityIndicator,
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useScrollToTop } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
+import { SkeletonList } from '@/components/Skeleton';
+import { hSelect } from '@/lib/haptics';
 import type { Theme } from '@/lib/theme';
 import {
   CATEGORIES,
@@ -63,9 +66,12 @@ export default function NewsScreen() {
   const { theme: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
   const { getToken } = useAuth();
+  const toast = useToast();
   const { isSaved, toggle: toggleSaved } = useSavedArticles();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
   const params = useLocalSearchParams<{ q?: string }>();
+  const listRef = useRef<FlatList<NewsItem>>(null);
+  useScrollToTop(listRef); // re-tap the News tab → scroll to top
   const [category, setCategory] = useState<CategoryKey>('top');
   const [search, setSearch] = useState('');
   const searchTerm = search.trim();
@@ -133,6 +139,18 @@ export default function NewsScreen() {
     }
   }
 
+  function toggleSave(item: NewsItem) {
+    const wasSaved = isSaved(item.id);
+    hSelect();
+    const payload = { id: item.id, title: item.title, summary: item.summary, link: item.link, source: item.source, published: item.published };
+    toggleSaved(payload);
+    if (wasSaved) {
+      toast.show('Removed from saved', { actionLabel: 'Undo', onAction: () => toggleSaved(payload) });
+    } else {
+      toast.show('Saved ✓', { type: 'success' });
+    }
+  }
+
   function renderCard({ item }: { item: NewsItem }) {
     const dot = accentFor(item.source, category, c);
     const when = relativeTime(item.published);
@@ -152,7 +170,7 @@ export default function NewsScreen() {
           <Text style={[styles.readMore, { color: dot }]} numberOfLines={1}>Read on {item.source} ↗</Text>
           <View style={styles.cardActions}>
             <TouchableOpacity
-              onPress={() => toggleSaved({ id: item.id, title: item.title, summary: item.summary, link: item.link, source: item.source, published: item.published })}
+              onPress={() => toggleSave(item)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={[styles.actionIcon, saved && styles.actionIconOn]}>{saved ? '★' : '☆'}</Text>
@@ -242,10 +260,7 @@ export default function NewsScreen() {
       </View>
 
       {active.isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={c.primary} />
-          <Text style={styles.centerText}>{searching ? 'Searching the news…' : 'Fetching the latest…'}</Text>
-        </View>
+        <SkeletonList count={6} />
       ) : items.length === 0 ? (
         <ScrollView
           contentContainerStyle={styles.center}
@@ -265,6 +280,7 @@ export default function NewsScreen() {
         </ScrollView>
       ) : (
         <FlatList
+          ref={listRef}
           data={items}
           keyExtractor={item => item.id}
           renderItem={renderCard}

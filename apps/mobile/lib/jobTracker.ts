@@ -76,6 +76,13 @@ export function useJobTracker() {
     await persist(current().filter(x => x.id !== id));
   }
 
+  // Re-insert a previously-removed entry, keeping its stage — used to Undo a delete.
+  async function restore(entry: TrackedJob) {
+    const list = current();
+    if (list.some(x => x.id === entry.id)) return;
+    await persist([entry, ...list].slice(0, CAP));
+  }
+
   const byId = new Map(items.map(j => [j.id, j.stage] as const));
-  return { items, stageOf: (id: string) => byId.get(id), track, setStage, remove };
+  return { items, stageOf: (id: string) => byId.get(id), track, setStage, remove, restore };
 }

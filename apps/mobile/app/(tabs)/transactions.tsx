@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import {
@@ -8,14 +8,17 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useScrollToTop } from '@react-navigation/native';
 import { apiFetch } from '@/lib/api';
 import AddTransactionSheet, { type EditingTransaction } from '@/components/AddTransactionSheet';
 import AppAlert from '@/components/AppAlert';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
+import { SkeletonList } from '@/components/Skeleton';
+import { hSelect, hSuccess } from '@/lib/haptics';
 import type { Theme } from '@/lib/theme';
 import { bankColor } from '@/lib/bankColors';
 
@@ -73,6 +76,9 @@ export default function TransactionsScreen() {
   const styles = useMemo(() => makeStyles(c), [c]);
   const { getToken } = useAuth();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const listRef = useRef<FlatList<Transaction>>(null);
+  useScrollToTop(listRef); // re-tap the Transactions tab → scroll to top
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput, 300);
@@ -127,6 +133,9 @@ export default function TransactionsScreen() {
           await apiFetch(`/transactions/${id}`, token!, { method: 'DELETE' });
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
+          queryClient.invalidateQueries({ queryKey: ['tx-history'] }); // Velora Brain's history
+          hSuccess();
+          toast.show('Transaction deleted', { type: 'success' });
         } catch {
           setAlertData({ title: 'Error', message: 'Failed to delete transaction.' });
         } finally {
@@ -189,6 +198,7 @@ export default function TransactionsScreen() {
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ['transactions'] });
           queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // summary/charts include this tx
+          queryClient.invalidateQueries({ queryKey: ['tx-history'] }); // Velora Brain's history
         }}
       />
       {/* Search bar */}
@@ -219,7 +229,7 @@ export default function TransactionsScreen() {
           {(['', 'DEBIT', 'CREDIT', 'REFUND', 'INVESTMENT'] as const).map(t => (
             <TouchableOpacity
               key={t}
-              onPress={() => { setType(t); setPage(1); }}
+              onPress={() => { hSelect(); setType(t); setPage(1); }}
               style={[styles.chip, type === t && styles.chipActive]}
             >
               <Text style={[styles.chipText, type === t && styles.chipTextActive]}>
@@ -271,9 +281,10 @@ export default function TransactionsScreen() {
       )}
 
       {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={c.text} />
+        <SkeletonList count={7} />
       ) : (
         <FlatList
+          ref={listRef}
           data={data?.data ?? []}
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}

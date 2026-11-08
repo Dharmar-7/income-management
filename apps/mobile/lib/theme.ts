@@ -91,8 +91,8 @@ export const darkTheme: Theme = {
   contrast: '#1f222e',
   contrastText: '#f1f5f9',
   text: '#f1f5f9',
-  textMuted: '#94a3b8',
-  textFaint: '#64748b',
+  textMuted: '#a3b0c2',   // was #94a3b8 — lifted for readable secondary text on dark cards
+  textFaint: '#8996a8',   // was #64748b — old value failed contrast for small tertiary text
   ...brand,
 };
 

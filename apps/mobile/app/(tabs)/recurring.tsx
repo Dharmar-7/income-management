@@ -11,6 +11,8 @@ import AddRecurringSheet from '@/components/AddRecurringSheet';
 import AppAlert from '@/components/AppAlert';
 import TransactionPickerSheet, { type PickerTx } from '@/components/TransactionPickerSheet';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
+import { hSelect, hSuccess } from '@/lib/haptics';
 import type { Theme } from '@/lib/theme';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -76,6 +78,7 @@ export default function RecurringScreen() {
   const qc = useQueryClient();
   const { theme: c } = useTheme();
   const s = useMemo(() => makeStyles(c), [c]);
+  const toast = useToast();
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<RecurringItem | null>(null);
@@ -101,6 +104,7 @@ export default function RecurringScreen() {
   }
 
   function showPayResult(linkResult?: { transactionId: string | null; autoCreated: boolean }) {
+    hSuccess();
     const linked = linkResult && linkResult.transactionId && !linkResult.autoCreated;
     setAlertData({
       title: linked ? 'Linked ✅' : 'Marked Paid',
@@ -138,6 +142,7 @@ export default function RecurringScreen() {
         const token = await getToken();
         await apiFetch(`/recurring/${item.id}`, token!, { method: 'DELETE' });
         qc.invalidateQueries({ queryKey: ['recurring'] });
+        toast.show(`Deleted “${item.name}”`);
       },
     });
   }
@@ -197,13 +202,13 @@ export default function RecurringScreen() {
               <View style={s.cardActions}>
                 <TouchableOpacity
                   style={[s.actionBtn, s.payBtn]}
-                  onPress={() => handlePay(item)}
+                  onPress={() => { hSelect(); handlePay(item); }}
                 >
                   <Text style={s.payBtnText}>✓ Mark Paid</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.actionBtn, s.deleteBtn]}
-                  onPress={() => handleDelete(item)}
+                  onPress={() => { hSelect(); handleDelete(item); }}
                 >
                   <Text style={s.deleteBtnText}>🗑</Text>
                 </TouchableOpacity>

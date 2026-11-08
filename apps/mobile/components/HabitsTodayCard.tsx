@@ -5,8 +5,10 @@ import { useAuth } from '@clerk/clerk-expo';
 import { useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
 import type { Theme } from '@/lib/theme';
 import { habitColor } from '@/lib/habitColors';
+import { hLight, hSuccess } from '@/lib/haptics';
 
 // A habit NOT ticked today comes back from the API as null — matching the Habits
 // tab (CheckStatus = 'DONE' | 'PARTIAL' | null). The old card compared against the
@@ -43,6 +45,7 @@ export default function HabitsTodayCard() {
   const { getToken } = useAuth();
   const router = useRouter();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const today = localToday();
   const dow = new Date().getDay();
@@ -69,6 +72,19 @@ export default function HabitsTodayCard() {
     const marked = habit.today !== null;
     const nextToday: CheckStatus = marked ? null : 'DONE';
     const nextStatus = marked ? 'NONE' : 'DONE';
+
+    // Celebrate when this tap completes the LAST habit due today (not when clearing one).
+    if (!marked) {
+      const remaining = dueToday.filter(h => h.id !== habit.id && h.today !== 'DONE').length;
+      if (remaining === 0 && dueToday.length > 0) {
+        hSuccess();
+        toast.show('🔥 All habits done for today — nice streak!', { type: 'success' });
+      } else {
+        hLight();
+      }
+    } else {
+      hLight();
+    }
 
     qc.setQueryData<Board>(key, prev => prev && ({
       ...prev,
