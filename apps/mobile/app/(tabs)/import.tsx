@@ -11,6 +11,8 @@ import Constants from 'expo-constants';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AppAlert from '@/components/AppAlert';
 import StatementReviewSheet, { type ParsedRow, type CommitRow } from '@/components/StatementReviewSheet';
+import SkippedStatementRows, { type SkippedRow } from '@/components/SkippedStatementRows';
+import { useToast } from '@/context/ToastContext';
 import { useTheme } from '@/context/ThemeContext';
 import { runSmsSync, requestSmsPermission, type AtmEntry, type SmsSyncResult } from '@/lib/smsSync';
 
@@ -32,6 +34,7 @@ export default function ImportScreen() {
   const { theme: c } = useTheme();
   const { getToken } = useAuth();
   const qc = useQueryClient();
+  const toast = useToast();
 
   // After anything writes new transactions, drop the stale caches so the
   // Transactions tab (and the dashboard/bank strip) show the fresh rows the next
@@ -54,6 +57,12 @@ export default function ImportScreen() {
   const [stmtCats, setStmtCats] = useState<{ id: string; name: string; icon: string }[]>([]);
   const [stmtResult, setStmtResult] = useState<ImportResult | null>(null);
   const [stmtError, setStmtError] = useState<string | null>(null);
+  // Rows the server didn't import ("existed"), with why — so they can be checked
+  // and added anyway. stmtBankId remembers the bank chosen for this import.
+  const [stmtSkipped, setStmtSkipped] = useState<SkippedRow[]>([]);
+  const [stmtSkippedKey, setStmtSkippedKey] = useState(0);
+  const [stmtBankId, setStmtBankId] = useState<string | null>(null);
+  const [stmtAdding, setStmtAdding] = useState(false);
 
   // Password-protected PDFs: remember the picked file so we can retry with a
   // password once the backend tells us the statement is encrypted.
@@ -302,13 +311,60 @@ export default function ImportScreen() {
         const err = await res.json().catch(() => ({ message: 'Import failed' }));
         throw new Error(err.message ?? 'Import failed');
       }
-      const result: ImportResult = await res.json();
+      const result: ImportResult & { skippedRows?: SkippedRow[] } = await res.json();
       setStmtResult(result);
+      setStmtSkipped(result.skippedRows ?? []);
+      setStmtSkippedKey(k => k + 1);
+      setStmtBankId(bankId);
       setStmtStatus('success');
       refreshAfterImport();
     } catch (err) {
       setStmtError(err instanceof Error ? err.message : 'Something went wrong.');
       setStmtStatus('error');
+    }
+  }
+
+  // "Add anyway" for skipped rows the user confirmed are real transactions.
+  async function handleAddSkipped(rows: SkippedRow[]) {
+    if (rows.length === 0) return;
+    setStmtAdding(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`${API_URL}/import/statement/commit`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactions: rows.map(r => r.transaction),
+          bankId: stmtBankId || undefined,
+          force: true,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Could not add them' }));
+        throw new Error(err.message ?? 'Could not add them');
+      }
+      const added: ImportResult = await res.json();
+      setStmtResult(prev => prev && {
+        ...prev,
+        imported: prev.imported + added.imported,
+        skipped: Math.max(0, prev.skipped - added.imported),
+        failed: prev.failed + added.failed,
+      });
+      if (added.failed === 0) {
+        setStmtSkipped(prev => prev.filter(r => !rows.includes(r)));
+        setStmtSkippedKey(k => k + 1);
+      }
+      refreshAfterImport();
+      toast.show(
+        added.failed === 0
+          ? `Added ${added.imported} transaction${added.imported === 1 ? '' : 's'}`
+          : `Added ${added.imported}, ${added.failed} failed`,
+        { type: added.failed === 0 ? 'success' : 'error' },
+      );
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : 'Could not add them', { type: 'error' });
+    } finally {
+      setStmtAdding(false);
     }
   }
 
@@ -457,8 +513,14 @@ export default function ImportScreen() {
                 <StatBadge value={stmtResult.skipped} label="Existed" bg="#fef9c3" text="#a16207" />
                 <StatBadge value={stmtResult.failed} label="Failed" bg="#fee2e2" text="#b91c1c" />
               </View>
+              <SkippedStatementRows
+                key={stmtSkippedKey}
+                rows={stmtSkipped}
+                adding={stmtAdding}
+                onAdd={handleAddSkipped}
+              />
               <TouchableOpacity
-                onPress={() => { setStmtStatus('idle'); setStmtResult(null); setStmtRows([]); setPendingFile(null); }}
+                onPress={() => { setStmtStatus('idle'); setStmtResult(null); setStmtRows([]); setPendingFile(null); setStmtSkipped([]); }}
                 style={{ borderWidth: 1, borderColor: c.inputBorder, borderRadius: 100, paddingVertical: 12, alignItems: 'center' }}
               >
                 <Text style={{ color: c.text, fontWeight: '600', fontSize: 14 }}>Import Another Statement</Text>

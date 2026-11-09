@@ -8,6 +8,7 @@ import {
   IsEnum,
   IsDateString,
   IsOptional,
+  IsBoolean,
   MaxLength,
   ArrayMinSize,
   ArrayMaxSize,
@@ -57,4 +58,10 @@ export class CommitStatementDto {
   @IsOptional()
   @IsString()
   bankId?: string;
+
+  // "Add anyway": the user checked these previously-skipped rows and confirmed
+  // they are real, distinct transactions — insert them despite the clash.
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }

@@ -13,6 +13,15 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-09',
+    title: '📄 See what a statement import skipped',
+    points: [
+      'After importing a statement, every row that "existed" is now listed with why: same reference number, same name/amount/date, or repeated in the file.',
+      'For a reference-number match it shows the transaction it matched (e.g. the SMS one), so you can compare.',
+      'Tick any that are really separate payments (like two ₹20 teas on one day) and tap "Add selected anyway".',
+    ],
+  },
+  {
     date: '2026-11-08',
     title: '📩 Automatic bank SMS import',
     points: [
