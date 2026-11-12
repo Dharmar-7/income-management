@@ -1,5 +1,5 @@
 import { Prisma, ImportSource, TransactionType } from '@prisma/client';
-import { SmsSyncService } from './sms-sync.service';
+import { SmsSyncService, istDayBounds } from './sms-sync.service';
 import { SmsParserService, RawSms } from './sms-parser.service';
 
 const CLERK_ID = 'clerk_1';
@@ -21,7 +21,7 @@ function makeMockPrisma() {
       findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockResolvedValue(null),
       findMany: jest.fn().mockResolvedValue([]),
-      create: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({ id: 'tx-new' }),
     },
   };
 }
@@ -43,6 +43,21 @@ describe('SmsSyncService', () => {
     ]);
     expect(res).toMatchObject({ imported: 2, skipped: 0, failed: 0 });
     expect(prisma.transaction.create).toHaveBeenCalledTimes(2);
+    expect(res.importedIds).toEqual(['tx-new', 'tx-new']);
+  });
+
+  it('matches same-day amounts within the IST calendar day, not UTC', async () => {
+    // 20:00 UTC on 9 May = 01:30 IST on 10 May → the window is IST 10 May.
+    await service.sync(CLERK_ID, [{ body: 'Rs.20 debited from A/c XX1234 via UPI', date: Date.parse('2026-05-09T20:00:00Z'), address: 'VM-IOBCHN-S' }]);
+    const { date } = prisma.transaction.findMany.mock.calls[0][0].where;
+    expect(date.gte.toISOString()).toBe('2026-05-09T18:30:00.000Z');
+    expect(date.lte.toISOString()).toBe('2026-05-10T18:29:59.999Z');
+  });
+
+  it('istDayBounds covers exactly one IST day', () => {
+    const { start, end } = istDayBounds(new Date('2026-05-09T10:00:00Z')); // 15:30 IST 9 May
+    expect(start.toISOString()).toBe('2026-05-08T18:30:00.000Z');
+    expect(end.toISOString()).toBe('2026-05-09T18:29:59.999Z');
   });
 
   it('only matches same-day amounts against manual/statement entries, not other SMS', async () => {

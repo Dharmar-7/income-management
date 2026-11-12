@@ -8,9 +8,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/clerk-expo';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '@/context/ThemeContext';
+import { apiFetch, ApiError } from '@/lib/api';
 import type { Theme } from '@/lib/theme';
-
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 interface AtsCheck { key: string; label: string; ok: boolean; hint: string }
 interface AtsResult {
@@ -87,21 +86,11 @@ export default function AtsScreen() {
       fd.append('jobDescription', jd.trim());
       if (title.trim()) fd.append('jobTitle', title.trim());
 
-      const res = await fetch(`${API_URL}/ats/review`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError((data as { message?: string })?.message ?? 'Review failed. Try again.');
-        setStatus('error');
-        return;
-      }
-      setResult(data as AtsResult);
+      const data = await apiFetch<AtsResult>('/ats/review', token!, { method: 'POST', body: fd });
+      setResult(data);
       setStatus('done');
-    } catch {
-      setError('Something went wrong. Check your connection and try again.');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Something went wrong. Check your connection and try again.');
       setStatus('error');
     }
   }

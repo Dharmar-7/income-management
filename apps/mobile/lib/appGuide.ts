@@ -19,6 +19,8 @@ export const CHANGELOG: Release[] = [
       'After importing a statement, every row that "existed" is now listed with why: same reference number, same name/amount/date, or repeated in the file.',
       'For a reference-number match it shows the transaction it matched (e.g. the SMS one), so you can compare.',
       'Tick any that are really separate payments (like two ₹20 teas on one day) and tap "Add selected anyway".',
+      'Bank SMS sync now has Undo: the toast after an automatic sync, and an "Undo this sync" button after a manual one, remove exactly the transactions that sync added.',
+      'Same-day duplicate checks for SMS now use the Indian calendar day instead of UTC.',
     ],
   },
   {

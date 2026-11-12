@@ -14,10 +14,10 @@ import StatementReviewSheet, { type ParsedRow, type CommitRow } from '@/componen
 import SkippedStatementRows, { type SkippedRow } from '@/components/SkippedStatementRows';
 import { useToast } from '@/context/ToastContext';
 import { useTheme } from '@/context/ThemeContext';
-import { runSmsSync, requestSmsPermission, type AtmEntry, type SmsSyncResult } from '@/lib/smsSync';
+import { runSmsSync, requestSmsPermission, undoSmsSync, type AtmEntry, type SmsSyncResult } from '@/lib/smsSync';
+import { apiFetch, ApiError } from '@/lib/api';
 
 const IS_EXPO_GO = Constants.executionEnvironment === 'storeClient';
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
 
 type ImportStatus = 'idle' | 'uploading' | 'success' | 'error';
 type SmsSyncStatus = 'idle' | 'requesting' | 'reading' | 'syncing' | 'done' | 'error';
@@ -78,7 +78,13 @@ export default function ImportScreen() {
   const [smsError, setSmsError] = useState<string | null>(null);
 
   // ── Simple info alert ─────────────────────────────────────────────────────
-  const [alertData, setAlertData] = useState<{ title: string; message: string } | null>(null);
+  const [alertData, setAlertData] = useState<{
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    confirmDestructive?: boolean;
+    onConfirm?: () => void;
+  } | null>(null);
 
   // ── ATM withdrawal queue ──────────────────────────────────────────────────
   const [atmList, setAtmList] = useState<AtmEntry[]>([]);
@@ -89,9 +95,8 @@ export default function ImportScreen() {
 
   async function addAtmCash(atm: AtmEntry) {
     try {
-      await fetch(`${API_URL}/cash/add`, {
+      await apiFetch('/cash/add', atmToken, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${atmToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: atm.amount, source: 'ATM', date: atm.date, note: 'ATM withdrawal (from SMS)' }),
       });
       qc.invalidateQueries({ queryKey: ['dashboard'] }); // cash balance feeds the dashboard
@@ -170,18 +175,7 @@ export default function ImportScreen() {
       const formData = new FormData();
       formData.append('file', { uri: file.uri, name: file.name, type: 'application/json' } as unknown as Blob);
 
-      const res = await fetch(`${API_URL}/import/takeout`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Upload failed' }));
-        throw new Error(err.message ?? 'Upload failed');
-      }
-
-      const data: ImportResult = await res.json();
+      const data = await apiFetch<ImportResult>('/import/takeout', token!, { method: 'POST', body: formData });
       setImportResult(data);
       setImportStatus('success');
       refreshAfterImport();
@@ -240,37 +234,27 @@ export default function ImportScreen() {
     formData.append('file', { uri: file.uri, name: file.name, type: file.mime } as unknown as Blob);
     if (password) formData.append('password', password);
 
-    const parseRes = await fetch(`${API_URL}/import/statement/parse`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
-    });
-
-    // 422 with needsPassword → ask the user for the PDF password and retry.
-    if (parseRes.status === 422) {
-      const err = await parseRes.json().catch(() => ({}));
-      if (err?.needsPassword) {
-        setPwError(err.code === 'PASSWORD_INCORRECT' ? (err.message ?? 'Incorrect password.') : null);
+    let data: { transactions: ParsedRow[] };
+    try {
+      data = await apiFetch('/import/statement/parse', token!, { method: 'POST', body: formData });
+    } catch (e) {
+      // 422 with needsPassword → ask the user for the PDF password and retry.
+      const body = e instanceof ApiError && e.status === 422
+        ? (e.body as { needsPassword?: boolean; code?: string; message?: string })
+        : null;
+      if (body?.needsPassword) {
+        setPwError(body.code === 'PASSWORD_INCORRECT' ? (body.message ?? 'Incorrect password.') : null);
         setPwPrompt(true);
         setStmtStatus('idle'); // the prompt overlays; keep the card neutral behind it
         return;
       }
+      throw e;
     }
-
-    if (!parseRes.ok) {
-      const err = await parseRes.json().catch(() => ({ message: 'Could not read the statement.' }));
-      throw new Error(err.message ?? 'Could not read the statement.');
-    }
-
-    const data: { transactions: ParsedRow[] } = await parseRes.json();
 
     // Load categories for the review picker (only once).
     let cats = stmtCats;
     if (cats.length === 0) {
-      const catsRes = await fetch(`${API_URL}/transactions/categories`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      cats = catsRes.ok ? await catsRes.json() : [];
+      cats = await apiFetch<typeof stmtCats>('/transactions/categories', token!).catch(() => []);
       setStmtCats(cats);
     }
 
@@ -302,16 +286,10 @@ export default function ImportScreen() {
     try {
       setStmtStatus('committing');
       const token = await getToken();
-      const res = await fetch(`${API_URL}/import/statement/commit`, {
+      const result = await apiFetch<ImportResult & { skippedRows?: SkippedRow[] }>('/import/statement/commit', token!, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactions: chosen, bankId: bankId || undefined }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Import failed' }));
-        throw new Error(err.message ?? 'Import failed');
-      }
-      const result: ImportResult & { skippedRows?: SkippedRow[] } = await res.json();
       setStmtResult(result);
       setStmtSkipped(result.skippedRows ?? []);
       setStmtSkippedKey(k => k + 1);
@@ -330,20 +308,14 @@ export default function ImportScreen() {
     setStmtAdding(true);
     try {
       const token = await getToken();
-      const res = await fetch(`${API_URL}/import/statement/commit`, {
+      const added = await apiFetch<ImportResult>('/import/statement/commit', token!, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transactions: rows.map(r => r.transaction),
           bankId: stmtBankId || undefined,
           force: true,
         }),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Could not add them' }));
-        throw new Error(err.message ?? 'Could not add them');
-      }
-      const added: ImportResult = await res.json();
       setStmtResult(prev => prev && {
         ...prev,
         imported: prev.imported + added.imported,
@@ -624,6 +596,25 @@ export default function ImportScreen() {
                     <StatBadge value={smsResult.skipped} label="Existed" bg="#fef9c3" text="#a16207" />
                     <StatBadge value={smsResult.failed} label="Failed" bg="#fee2e2" text="#b91c1c" />
                   </View>
+                  {smsResult.importedIds.length > 0 && (
+                    <TouchableOpacity
+                      onPress={() => setAlertData({
+                        title: 'Undo this sync?',
+                        message: `This removes the ${smsResult.importedIds.length} transaction${smsResult.importedIds.length === 1 ? '' : 's'} just added. The SMS stay in your inbox.`,
+                        confirmLabel: 'Remove',
+                        confirmDestructive: true,
+                        onConfirm: async () => {
+                          const removed = await undoSmsSync(getToken, smsResult.importedIds);
+                          refreshAfterImport();
+                          setSmsResult(r => r && { ...r, imported: r.imported - removed, importedIds: [] });
+                          toast.show(`Removed ${removed} transaction${removed === 1 ? '' : 's'}`, { type: 'info' });
+                        },
+                      })}
+                      style={{ borderWidth: 1, borderColor: c.danger, borderRadius: 100, paddingVertical: 12, alignItems: 'center', marginBottom: 8 }}
+                    >
+                      <Text style={{ color: c.danger, fontWeight: '600', fontSize: 14 }}>Undo this sync</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     onPress={() => { setSmsStatus('idle'); setSmsResult(null); }}
                     style={{ borderWidth: 1, borderColor: c.inputBorder, borderRadius: 100, paddingVertical: 12, alignItems: 'center' }}
@@ -661,11 +652,14 @@ export default function ImportScreen() {
         onConfirm={handleCommitStatement}
       />
 
-      {/* Info alert (Android Only / Expo Go guard) */}
+      {/* Info alert (Android Only / Expo Go guard) or a confirm (Undo sync) */}
       <AppAlert
         visible={!!alertData}
         title={alertData?.title ?? ''}
         message={alertData?.message ?? ''}
+        confirmLabel={alertData?.confirmLabel}
+        confirmDestructive={alertData?.confirmDestructive}
+        onConfirm={alertData?.onConfirm}
         onClose={() => setAlertData(null)}
       />
 

@@ -16,7 +16,7 @@ import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
 import { apiFetch } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
-import { autoSmsSync, smsSupported } from '@/lib/smsSync';
+import { autoSmsSync, smsSupported, undoSmsSync } from '@/lib/smsSync';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -203,7 +203,24 @@ function SmsAutoSync() {
             },
           });
         } else {
-          toast.show(msg, { type: 'success', actionLabel: 'View', onAction: () => router.push('/(tabs)/transactions') });
+          // SMS rows save without a review step, so Undo is the safety net:
+          // it deletes exactly the rows this sync created.
+          toast.show(msg, {
+            type: 'success',
+            actionLabel: 'Undo',
+            duration: 7000,
+            onAction: async () => {
+              const removed = await undoSmsSync(getToken, res.importedIds);
+              for (const key of ['transactions', 'dashboard', 'banks', 'tx-history']) {
+                qc.invalidateQueries({ queryKey: [key] });
+              }
+              toast.show(`Removed ${removed} transaction${removed === 1 ? '' : 's'}`, {
+                type: 'info',
+                actionLabel: 'View',
+                onAction: () => router.push('/(tabs)/transactions'),
+              });
+            },
+          });
         }
       } finally {
         running.current = false;

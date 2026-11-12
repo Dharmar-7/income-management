@@ -8,7 +8,17 @@ export interface SmsSyncResult {
   imported: number;
   skipped: number;       // already existed (same SMS, same UPI ref, or a manual/statement entry)
   failed: number;
+  importedIds: string[]; // the rows this sync created — lets the app offer "Undo"
   atmTransactions: AtmEntry[];  // returned so mobile can prompt user
+}
+
+// Bank SMS are Indian; "same day" must mean the IST calendar day, not the
+// server's UTC day, or a 1 am payment is compared against yesterday's rows.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+export function istDayBounds(d: Date): { start: Date; end: Date } {
+  const startMs = Math.floor((d.getTime() + IST_OFFSET_MS) / DAY_MS) * DAY_MS - IST_OFFSET_MS;
+  return { start: new Date(startMs), end: new Date(startMs + DAY_MS - 1) };
 }
 
 export interface AtmEntry {
@@ -42,6 +52,7 @@ export class SmsSyncService {
     let imported = 0;
     let skipped = 0;
     let failed = 0;
+    const importedIds: string[] = [];
     const atmTransactions: AtmEntry[] = [];
 
     // Link each SMS to the user's Bank ("IOB", "TMB") so it gets that colour.
@@ -61,7 +72,8 @@ export class SmsSyncService {
 
         const categoryId = this.categorizer.getCategoryId(tx.merchant) || undefined;
 
-        await this.prisma.transaction.create({
+        const created = await this.prisma.transaction.create({
+          select: { id: true },
           data: {
             userId,
             merchant: tx.merchant,
@@ -77,6 +89,7 @@ export class SmsSyncService {
         });
 
         imported++;
+        if (created?.id) importedIds.push(created.id);
 
         // Track ATM transactions to prompt cash-in-hand on mobile
         if (tx.isAtm && tx.type === TransactionType.DEBIT) {
@@ -100,7 +113,7 @@ export class SmsSyncService {
       data: { smsSyncedAt: new Date() },
     });
 
-    return { imported, skipped, failed, atmTransactions };
+    return { imported, skipped, failed, importedIds, atmTransactions };
   }
 
   private matchBank(banks: { id: string; name: string }[], hint: string | null): string | undefined {
@@ -135,10 +148,7 @@ export class SmsSyncService {
     // Tier 3: same amount + type on the same day, but only against entries
     // that did NOT come from SMS (typed in manually or from a statement). Two
     // SMS for the same amount on one day are two real payments, not duplicates.
-    const dayStart = new Date(tx.date);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(tx.date);
-    dayEnd.setHours(23, 59, 59, 999);
+    const { start, end } = istDayBounds(tx.date);
 
     const sameDay = await this.prisma.transaction.findMany({
       where: {
@@ -146,7 +156,7 @@ export class SmsSyncService {
         amount: tx.amount,
         type: tx.type,
         source: { not: ImportSource.SMS },
-        date: { gte: dayStart, lte: dayEnd },
+        date: { gte: start, lte: end },
       },
       select: { id: true },
     });

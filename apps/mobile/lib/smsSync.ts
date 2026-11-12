@@ -20,6 +20,7 @@ export interface SmsSyncResult {
   imported: number;
   skipped: number;
   failed: number;
+  importedIds: string[];   // rows this sync created — passed to undoSmsSync
   atmTransactions: AtmEntry[];
 }
 
@@ -105,7 +106,7 @@ export async function runSmsSync(getToken: () => Promise<string | null>): Promis
   const startedAt = Date.now();
   const candidates = (await readInbox(sinceMs)).filter(looksLikeBankSms);
 
-  let result: SmsSyncResult = { imported: 0, skipped: 0, failed: 0, atmTransactions: [] };
+  let result: SmsSyncResult = { imported: 0, skipped: 0, failed: 0, importedIds: [], atmTransactions: [] };
   if (candidates.length > 0) {
     result = await apiFetch<SmsSyncResult>('/sms/sync', token, {
       method: 'POST',
@@ -118,6 +119,21 @@ export async function runSmsSync(getToken: () => Promise<string | null>): Promis
   // re-read and de-duplicated by the server rather than missed).
   try { await AsyncStorage.setItem(LAST_SYNC_KEY, String(startedAt)); } catch { /* best effort */ }
   return result;
+}
+
+/**
+ * Undo a sync: delete the rows it created. The SMS themselves are untouched,
+ * but the local cursor has moved past them, so they won't be re-imported
+ * unless the user clears app data — which is the point of an undo.
+ * Returns how many were removed.
+ */
+export async function undoSmsSync(getToken: () => Promise<string | null>, ids: string[]): Promise<number> {
+  const token = await getToken();
+  if (!token || ids.length === 0) return 0;
+  const results = await Promise.allSettled(
+    ids.map(id => apiFetch(`/transactions/${id}`, token, { method: 'DELETE' })),
+  );
+  return results.filter(r => r.status === 'fulfilled').length;
 }
 
 /**

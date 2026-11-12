@@ -7,7 +7,9 @@
     "dev": "node start.js",
     "android": "node start.js --android",
     "ios": "node start.js --ios",
-    "build": "node start.js --no-dev"
+    "build": "node start.js --no-dev",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.0.0",
@@ -52,6 +54,8 @@
     "@babel/core": "^7.24.0",
     "@types/react": "~19.1.0",
     "cross-env": "^10.1.0",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "^58.0.4",
     "typescript": "^5.3.0"
   }
 }
