@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 // records to, so the browser reaches Clerk through our own /__clerk proxy
 // (see proxy.ts). The dev instance (pk_test_) talks to Clerk directly.
 const clerkProxyUrl = (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '').startsWith('pk_live_')
-  ? '/__clerk'
+  ? (process.env.NEXT_PUBLIC_CLERK_PROXY_URL ?? 'https://velora-personal-assistant.vercel.app/__clerk')
   : undefined;
 
 export default function RootLayout({
