@@ -59,6 +59,12 @@ const persistOptions = {
 };
 
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
+// The production Clerk instance lives on our Vercel domain, which can't host
+// Clerk's own subdomain — so live keys reach Clerk through the website's
+// /__clerk proxy. Dev keys (pk_test_) talk to Clerk directly.
+const clerkProxyUrl = publishableKey?.startsWith('pk_live_')
+  ? (process.env.EXPO_PUBLIC_CLERK_PROXY_URL ?? 'https://velora-personal-assistant.vercel.app/__clerk')
+  : undefined;
 
 function AuthGuard() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
@@ -254,6 +260,7 @@ function RootLayout() {
         <ToastProvider>
           <ClerkProvider
             publishableKey={publishableKey}
+            proxyUrl={clerkProxyUrl}
             tokenCache={Platform.OS === 'web' ? undefined : tokenCache}
             // Persists Clerk's session/user resources so a cold start with no
             // network keeps the user signed in — without this, Clerk's boot-time
