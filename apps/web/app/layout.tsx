@@ -28,13 +28,20 @@ export const metadata: Metadata = {
   description: "Track spending, set budgets, and see where every rupee goes.",
 };
 
+// The production Clerk instance lives on a Vercel subdomain we can't add DNS
+// records to, so the browser reaches Clerk through our own /__clerk proxy
+// (see proxy.ts). The dev instance (pk_test_) talks to Clerk directly.
+const clerkProxyUrl = (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '').startsWith('pk_live_')
+  ? '/__clerk'
+  : undefined;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider proxyUrl={clerkProxyUrl}>
       <html
         lang="en"
         className={`${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full antialiased`}
