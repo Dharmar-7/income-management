@@ -38,7 +38,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          BUILD_JSON=$(npx eas-cli build --platform android --profile preview --non-interactive --wait --json)
+          BUILD_JSON=$(npx eas-cli build --platform android --profile production --non-interactive --wait --json)
           echo "$BUILD_JSON"
           BUILD_URL=$(echo "$BUILD_JSON" | jq -r '.[0].artifacts.buildUrl // empty')
           if [ -z "$BUILD_URL" ]; then
