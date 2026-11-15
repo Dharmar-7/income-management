@@ -18,6 +18,7 @@ import AppAlert from '@/components/AppAlert';
 import { useTheme } from '@/context/ThemeContext';
 import type { Theme } from '@/lib/theme';
 import { habitColor } from '@/lib/habitColors';
+import { hSelect } from '@/lib/haptics';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type CheckStatus = 'DONE' | 'PARTIAL' | null;
@@ -105,6 +106,8 @@ export default function HabitsScreen() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<HabitRow | null>(null);
   const [seeding, setSeeding] = useState(false);
+  // Reorder mode: ▲▼ arrows on each board row instead of tap-to-edit.
+  const [reordering, setReordering] = useState(false);
   // 0 = current week, -1 = last week, +1 = next week…
   const [weekOffset, setWeekOffset] = useState(0);
   const [alertData, setAlertData] = useState<{
@@ -173,6 +176,32 @@ export default function HabitsScreen() {
       });
     } catch {
       // Roll back by refetching the truth.
+    } finally {
+      invalidate();
+    }
+  }
+
+  // Move a habit one row up/down. The new order is applied to every cached
+  // week at once (so the board, the stats list and Home all follow), then saved.
+  async function moveHabit(id: string, dir: -1 | 1) {
+    const list = queryClient.getQueryData<Board>(['habits', today, anchor])?.habits ?? [];
+    const from = list.findIndex(h => h.id === id);
+    const to = from + dir;
+    if (from < 0 || to < 0 || to >= list.length) return;
+    const ids = list.map(h => h.id);
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    hSelect();
+    queryClient.setQueriesData<Board>({ queryKey: ['habits'] }, prev => {
+      if (!prev?.habits) return prev;
+      const byId = new Map(prev.habits.map(h => [h.id, h]));
+      const sorted = ids.map(i => byId.get(i)).filter((h): h is HabitRow => !!h);
+      return { ...prev, habits: sorted };
+    });
+    try {
+      const token = await getToken();
+      await apiFetch('/habits/reorder', token!, { method: 'PATCH', body: JSON.stringify({ ids }) });
+    } catch {
+      setAlertData({ title: 'Error', message: 'Could not save the new order.' });
     } finally {
       invalidate();
     }
@@ -292,9 +321,21 @@ export default function HabitsScreen() {
                       <Text style={styles.weekNavArrow}>›</Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity style={styles.addBtn} onPress={() => { setEditing(null); setSheetOpen(true); }}>
-                    <Text style={styles.addBtnText}>+ Add</Text>
-                  </TouchableOpacity>
+                  <View style={styles.headerBtns}>
+                    {habits.length > 1 && (
+                      <TouchableOpacity
+                        style={[styles.reorderBtn, reordering && styles.reorderBtnOn]}
+                        onPress={() => setReordering(r => !r)}
+                      >
+                        <Text style={[styles.reorderBtnText, reordering && styles.reorderBtnTextOn]}>
+                          {reordering ? 'Done' : '⇅ Reorder'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity style={styles.addBtn} onPress={() => { setEditing(null); setSheetOpen(true); }}>
+                      <Text style={styles.addBtnText}>+ Add</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.boardCard} {...panResponder.panHandlers}>
@@ -313,18 +354,39 @@ export default function HabitsScreen() {
                   </View>
 
                   {/* One row per habit */}
-                  {habits.map(h => {
+                  {habits.map((h, idx) => {
                     const col = habitColor(h.color);
                     return (
                       <View key={h.id} style={styles.boardRow}>
                         <TouchableOpacity
-                          style={styles.labelCell}
-                          onPress={() => { setEditing(h); setSheetOpen(true); }}
-                          onLongPress={() => deleteHabit(h)}
+                          style={[styles.labelCell, reordering && styles.labelCellReorder]}
+                          onPress={() => { if (!reordering) { setEditing(h); setSheetOpen(true); } }}
+                          onLongPress={() => { if (!reordering) deleteHabit(h); }}
+                          activeOpacity={reordering ? 1 : 0.6}
                         >
                           <Text style={styles.habitIcon}>{h.icon}</Text>
                           <Text style={styles.habitName} numberOfLines={1}>{h.name}</Text>
                         </TouchableOpacity>
+                        {reordering && (
+                          <View style={styles.moveBtns}>
+                            <TouchableOpacity
+                              style={[styles.moveBtn, idx === 0 && styles.moveBtnOff]}
+                              disabled={idx === 0}
+                              onPress={() => moveHabit(h.id, -1)}
+                              hitSlop={{ top: 6, bottom: 2, left: 6, right: 6 }}
+                            >
+                              <Text style={styles.moveArrow}>▲</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.moveBtn, idx === habits.length - 1 && styles.moveBtnOff]}
+                              disabled={idx === habits.length - 1}
+                              onPress={() => moveHabit(h.id, 1)}
+                              hitSlop={{ top: 2, bottom: 6, left: 6, right: 6 }}
+                            >
+                              <Text style={styles.moveArrow}>▼</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
                         {h.week.map(w => {
                           const isToday = w.day === board?.todayIso;
                           const isFuture = w.day > today;
@@ -440,6 +502,18 @@ const makeStyles = (c: Theme) => StyleSheet.create({
     backgroundColor: c.chipBg, borderWidth: 1, borderColor: c.cardBorder,
   },
   weekNavArrow: { fontSize: 16, lineHeight: 18, color: c.textMuted, fontWeight: '700' },
+  headerBtns: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reorderBtn: {
+    borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: c.chipBg, borderWidth: 1, borderColor: c.cardBorder,
+  },
+  reorderBtnOn: { backgroundColor: c.primary, borderColor: c.primary },
+  reorderBtnText: { fontSize: 13, fontWeight: '700', color: c.textMuted },
+  reorderBtnTextOn: { color: c.onColor },
+  moveBtns: { flexDirection: 'column', marginRight: 4 },
+  moveBtn: { paddingHorizontal: 5, paddingVertical: 1 },
+  moveBtnOff: { opacity: 0.25 },
+  moveArrow: { fontSize: 11, color: c.primary },
   addBtn: { backgroundColor: c.primary, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 6 },
   addBtnText: { color: c.onColor, fontSize: 13, fontWeight: '700' },
 
@@ -456,6 +530,7 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   },
   boardRow: { flexDirection: 'row', alignItems: 'center' },
   labelCell: { width: 84, flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingRight: 4 },
+  labelCellReorder: { width: 70 },
   habitIcon: { fontSize: 13 },
   habitName: { fontSize: 11, color: c.text, fontWeight: '600', flex: 1 },
   dayCell: { flex: 1, alignItems: 'center', justifyContent: 'center' },

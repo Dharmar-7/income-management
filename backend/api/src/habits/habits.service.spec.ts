@@ -1,4 +1,4 @@
-import { statusWeight, weekDays, weekPercent, dailyScore } from './habits.service';
+import { HabitsService, statusWeight, weekDays, weekPercent, dailyScore } from './habits.service';
 import { HabitStatus } from '@prisma/client';
 
 describe('statusWeight', () => {
@@ -72,5 +72,35 @@ describe('dailyScore', () => {
       { scheduleDays: [4], today: 'DONE' as HabitStatus },
     ];
     expect(dailyScore(habits, 4).score).toBe(100);
+  });
+});
+
+describe('HabitsService.reorder', () => {
+  function make(ownedIds: string[]) {
+    const update = jest.fn((args: unknown) => args);
+    const prisma = {
+      resolveUserId: jest.fn().mockResolvedValue('u1'),
+      habit: {
+        findMany: jest.fn().mockResolvedValue(ownedIds.map(id => ({ id }))),
+        update,
+      },
+      $transaction: jest.fn().mockResolvedValue([]),
+    };
+    return { service: new HabitsService(prisma as never), prisma, update };
+  }
+
+  it('sets each habit order to its position in the list', async () => {
+    const { service, prisma, update } = make(['a', 'b', 'c']);
+    await service.reorder('clerk1', ['c', 'a', 'b']);
+    expect(update).toHaveBeenNthCalledWith(1, { where: { id: 'c' }, data: { order: 0 } });
+    expect(update).toHaveBeenNthCalledWith(2, { where: { id: 'a' }, data: { order: 1 } });
+    expect(update).toHaveBeenNthCalledWith(3, { where: { id: 'b' }, data: { order: 2 } });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects ids the user does not own and changes nothing', async () => {
+    const { service, prisma } = make(['a']);
+    await expect(service.reorder('clerk1', ['a', 'someone-elses'])).rejects.toThrow('Habit not found.');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });

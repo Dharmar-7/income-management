@@ -157,6 +157,21 @@ export class HabitsService {
     });
   }
 
+  // Persist a new board order. `ids` is the wanted top-to-bottom order; each
+  // habit's `order` becomes its index. All ids must belong to the user.
+  async reorder(clerkId: string, ids: string[]) {
+    const userId = await this.resolveUserId(clerkId);
+    const owned = await this.prisma.habit.findMany({
+      where: { userId, id: { in: ids } },
+      select: { id: true },
+    });
+    if (owned.length !== ids.length) throw new NotFoundException('Habit not found.');
+    await this.prisma.$transaction(
+      ids.map((id, index) => this.prisma.habit.update({ where: { id }, data: { order: index } })),
+    );
+    return { message: 'Order saved.' };
+  }
+
   async remove(clerkId: string, habitId: string) {
     const userId = await this.resolveUserId(clerkId);
     await this.assertOwned(userId, habitId);

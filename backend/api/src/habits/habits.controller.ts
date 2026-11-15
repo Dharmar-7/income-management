@@ -5,6 +5,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { CreateHabitDto } from './dto/create-habit.dto';
 import { UpdateHabitDto } from './dto/update-habit.dto';
 import { CheckinHabitDto } from './dto/checkin-habit.dto';
+import { ReorderHabitsDto } from './dto/reorder-habits.dto';
 
 @Controller('habits')
 @UseGuards(ClerkAuthGuard)
@@ -35,6 +36,13 @@ export class HabitsController {
   @Post('seed-defaults')
   seedDefaults(@CurrentUser() userId: string) {
     return this.service.seedDefaults(userId);
+  }
+
+  // PATCH /habits/reorder — save a new row order. Declared before ':id' so
+  // "reorder" isn't read as a habit id.
+  @Patch('reorder')
+  reorder(@CurrentUser() userId: string, @Body() dto: ReorderHabitsDto) {
+    return this.service.reorder(userId, dto.ids);
   }
 
   @Patch(':id')

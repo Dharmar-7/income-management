@@ -13,6 +13,14 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-15',
+    title: '⇅ Reorder your habits',
+    points: [
+      'On the Habits board, tap "Reorder" and use the ▲▼ arrows to move any habit up or down. Tap "Done" when finished.',
+      'The new order is saved and used everywhere: the weekly board, Streaks & Progress, and the Home card.',
+    ],
+  },
+  {
     date: '2026-11-09',
     title: '📄 See what a statement import skipped',
     points: [
