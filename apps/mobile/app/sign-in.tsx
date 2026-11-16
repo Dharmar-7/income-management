@@ -1,5 +1,6 @@
 import { useSSO, useSignIn } from '@clerk/clerk-expo';
 import * as WebBrowser from 'expo-web-browser';
+import * as Sentry from '@sentry/react-native';
 import * as AuthSession from 'expo-auth-session';
 import {
   View,
@@ -46,10 +47,16 @@ export default function SignInScreen() {
         });
         if (createdSessionId && setActive) {
           await setActive({ session: createdSessionId });
+        } else {
+          setError('Google sign-in finished but no session was created. Please try again.');
         }
       }
-    } catch {
-      setError('Sign in failed. Please try again.');
+    } catch (e: any) {
+      // Show the real reason (Clerk errors carry it in errors[0]) so a sign-in
+      // problem can be diagnosed from a screenshot instead of guessed at.
+      const reason = e?.errors?.[0]?.longMessage ?? e?.errors?.[0]?.message ?? e?.message ?? String(e);
+      Sentry.captureException(e);
+      setError(`Sign in failed: ${String(reason).slice(0, 200)}`);
     } finally {
       setLoading(false);
     }
