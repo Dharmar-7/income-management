@@ -453,8 +453,10 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   clearBtnText: { color: c.textFaint, fontSize: 14 },
 
   filterRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, marginBottom: 4 },
-  chips: { flex: 1 },
-  sourceRow: { flexGrow: 0, marginBottom: 6 },
+  chips: { flex: 1, flexShrink: 0 },
+  // flexShrink 0: a horizontal ScrollView defaults to flexShrink 1, so the list
+  // below could squash these rows to a fraction of their height.
+  sourceRow: { flexGrow: 0, flexShrink: 0, marginBottom: 6 },
   chip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 99,
     backgroundColor: c.card, borderWidth: 1, borderColor: c.inputBorder,
@@ -478,7 +480,7 @@ const makeStyles = (c: Theme) => StyleSheet.create({
   bankStripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
 
   // Banks strip above the list.
-  bankStrip: { marginBottom: 10, flexGrow: 0 },
+  bankStrip: { marginBottom: 10, flexGrow: 0, flexShrink: 0 },
   bankChip: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8,
