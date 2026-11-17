@@ -1,3 +1,4 @@
+import '@/lib/clerkProxyFetch'; // must run before Clerk makes its first request
 import * as Sentry from '@sentry/react-native';
 import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { resourceCache } from '@clerk/clerk-expo/resource-cache';
