@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useScrollToTop } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import AddTransactionSheet, { type EditingTransaction } from '@/components/AddTransactionSheet';
 import AppAlert from '@/components/AppAlert';
@@ -88,6 +89,19 @@ export default function TransactionsScreen() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [showSheet, setShowSheet] = useState(false);
   const [editingTx, setEditingTx] = useState<EditingTransaction | null>(null);
+  const [newType, setNewType] = useState<'DEBIT' | 'CREDIT' | undefined>(undefined);
+
+  // Quick-add widget: velora://transactions?add=expense|income opens the Add
+  // sheet with that type preselected. The param is cleared so it fires once.
+  const { add: addParam } = useLocalSearchParams<{ add?: string }>();
+  const router = useRouter();
+  useEffect(() => {
+    if (addParam !== 'expense' && addParam !== 'income') return;
+    setEditingTx(null);
+    setNewType(addParam === 'income' ? 'CREDIT' : 'DEBIT');
+    setShowSheet(true);
+    router.setParams({ add: undefined });
+  }, [addParam]); // eslint-disable-line react-hooks/exhaustive-deps
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [alertData, setAlertData] = useState<{
     title: string; message: string;
@@ -100,6 +114,7 @@ export default function TransactionsScreen() {
 
   function openAdd() {
     setEditingTx(null);
+    setNewType(undefined);
     setShowSheet(true);
   }
 
@@ -198,6 +213,7 @@ export default function TransactionsScreen() {
       <AddTransactionSheet
         visible={showSheet}
         editing={editingTx}
+        initialType={newType}
         categories={categories ?? []}
         onClose={closeSheet}
         onSuccess={() => {

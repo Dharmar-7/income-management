@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Switch } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Switch, Platform } from 'react-native';
 import { useClerk, useUser, useAuth } from '@clerk/clerk-expo';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,8 @@ import { apiFetch } from '@/lib/api';
 import { useTheme, type ThemeMode } from '@/context/ThemeContext';
 import { useJobFinder } from '@/lib/useJobFinder';
 import { useEmergencyMode } from '@/lib/useEmergencyMode';
+import { readHideAmounts, writeHideAmounts } from '@/widgets/snapshot';
+import { redrawWidgets } from '@/widgets/refresh';
 
 const THEME_OPTIONS: { value: ThemeMode; label: string; icon: string }[] = [
   { value: 'system', label: 'System', icon: '📱' },
@@ -25,6 +27,13 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const { enabled: jobsEnabled, setEnabled: setJobsEnabled } = useJobFinder();
   const { enabled: emergencyEnabled, setEnabled: setEmergencyEnabled } = useEmergencyMode();
+  const [hideWidgetAmounts, setHideWidgetAmounts] = useState(false);
+  useEffect(() => { readHideAmounts().then(setHideWidgetAmounts).catch(() => undefined); }, []);
+  async function toggleHideWidgetAmounts(next: boolean) {
+    setHideWidgetAmounts(next);
+    await writeHideAmounts(next);
+    await redrawWidgets(); // apply to widgets already on the home screen right away
+  }
 
   const meQuery = useQuery({
     queryKey: ['me'],
@@ -210,6 +219,38 @@ export default function SettingsScreen() {
             thumbColor={c.onColor}
           />
         </View>
+
+        {Platform.OS === 'android' && (
+          <>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: c.textFaint, letterSpacing: 0.8, marginBottom: 8, marginLeft: 4 }}>
+              HOME-SCREEN WIDGETS
+            </Text>
+            <View style={{
+              backgroundColor: c.card, borderRadius: 16, padding: 16,
+              borderWidth: 1, borderColor: c.cardBorder, marginBottom: 24,
+            }}>
+              <Text style={{ color: c.textMuted, fontSize: 12, lineHeight: 17 }}>
+                Long-press your home screen → Widgets → Velora. There are 7: Today, Quick add, Habits,
+                Runway, Due soon, Jobs and Headlines. They update when you open the app; Headlines also
+                refreshes on its own.
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', color: c.text, fontSize: 15 }}>🙈 Hide amounts</Text>
+                  <Text style={{ color: c.textMuted, fontSize: 12, marginTop: 4, lineHeight: 17 }}>
+                    Show ₹ •••• instead of real numbers, for when others can see your phone.
+                  </Text>
+                </View>
+                <Switch
+                  value={hideWidgetAmounts}
+                  onValueChange={toggleHideWidgetAmounts}
+                  trackColor={{ true: c.primary, false: c.inputBorder }}
+                  thumbColor={c.onColor}
+                />
+              </View>
+            </View>
+          </>
+        )}
 
         {/* Sign Out */}
         <TouchableOpacity

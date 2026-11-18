@@ -46,13 +46,15 @@ interface Props {
   onSuccess: () => void;
   // When set, the sheet edits this transaction instead of creating a new one.
   editing?: EditingTransaction | null;
+  // Type preselected for a NEW transaction (e.g. from the Quick-add widget).
+  initialType?: 'DEBIT' | 'CREDIT';
 }
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function AddTransactionSheet({ visible, categories, onClose, onSuccess, editing }: Props) {
+export default function AddTransactionSheet({ visible, categories, onClose, onSuccess, editing, initialType }: Props) {
   const { getToken } = useAuth();
   const { theme: c } = useTheme();
   const styles = useMemo(() => makeStyles(c), [c]);
@@ -86,9 +88,10 @@ export default function AddTransactionSheet({ visible, categories, onClose, onSu
       setDescription(editing.description ?? '');
     } else {
       reset();
+      if (initialType) setTxType(initialType);
     }
     setShowCategories(false);
-  }, [visible, editing]);
+  }, [visible, editing]); // eslint-disable-line react-hooks/exhaustive-deps -- initialType is read only when the sheet opens
 
   function reset() {
     setTxType('DEBIT');

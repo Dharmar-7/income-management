@@ -53,7 +53,91 @@
           "color": "#6366f1"
         }
       ],
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "VeloraToday",
+              "label": "Velora · Today",
+              "description": "Spent today, this month and budget left",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 3600000
+            },
+            {
+              "name": "VeloraQuickAdd",
+              "label": "Velora · Quick add",
+              "description": "Add an expense or income in one tap",
+              "minWidth": "250dp",
+              "minHeight": "40dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal",
+              "updatePeriodMillis": 0
+            },
+            {
+              "name": "VeloraHabits",
+              "label": "Velora · Habits",
+              "description": "Today's habits and your daily score",
+              "minWidth": "180dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 3600000
+            },
+            {
+              "name": "VeloraSafetyNet",
+              "label": "Velora · Runway",
+              "description": "How many months your emergency fund lasts",
+              "minWidth": "110dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 3600000
+            },
+            {
+              "name": "VeloraBills",
+              "label": "Velora · Due soon",
+              "description": "Bills and EMIs due in the next 7 days",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 3600000
+            },
+            {
+              "name": "VeloraJobs",
+              "label": "Velora · Jobs",
+              "description": "New jobs matching your saved searches",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 3600000
+            },
+            {
+              "name": "VeloraNews",
+              "label": "Velora · Headlines",
+              "description": "Latest headlines, refreshed in the background",
+              "minWidth": "250dp",
+              "minHeight": "180dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 3,
+              "resizeMode": "horizontal|vertical",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ]
   }
 }

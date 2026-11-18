@@ -18,6 +18,7 @@ import { ToastProvider, useToast } from '@/context/ToastContext';
 import { apiFetch } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
 import { autoSmsSync, smsSupported, undoSmsSync } from '@/lib/smsSync';
+import { refreshWidgets, clearWidgets } from '@/widgets/refresh';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -244,6 +245,33 @@ function SmsAutoSync() {
   return null;
 }
 
+// Keeps the Android home-screen widgets in step with the app: refreshes their
+// snapshot when the app opens (a few seconds later, so the automatic SMS import
+// lands first) and again as it goes to the background (to catch anything added
+// meanwhile). On sign-out, personal data is wiped from the widgets.
+function WidgetSync() {
+  const { isSignedIn, isLoaded, getToken } = useAuth();
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) { clearWidgets().catch(() => undefined); return; }
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { refreshWidgets(getToken); }, 8000);
+    };
+    soon();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') soon();
+      else if (state === 'background') refreshWidgets(getToken, { force: ['today', 'habits'] });
+    });
+    return () => { clearTimeout(timer); sub.remove(); };
+  }, [isLoaded, isSignedIn, getToken]);
+
+  return null;
+}
+
 // Drives the OS status-bar text colour from the active theme.
 function ThemedStatusBar() {
   const { scheme } = useTheme();
@@ -275,6 +303,7 @@ function RootLayout() {
               <PushSync />
               <NotificationRouter />
               <SmsAutoSync />
+              <WidgetSync />
               <Slot />
             </PersistQueryClientProvider>
           </ClerkProvider>

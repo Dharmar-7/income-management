@@ -13,6 +13,16 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-18',
+    title: '🧩 Home-screen widgets',
+    points: [
+      'Seven Android widgets: Today (spent today, month, budget left), Quick add, Habits, Runway, Due soon (bills and EMIs), Jobs and Headlines.',
+      'Add them by long-pressing your home screen → Widgets → Velora. Tap a widget to jump to that part of the app.',
+      'They update when you open Velora. Headlines also refreshes on its own every half hour.',
+      'Settings → Home-screen widgets → Hide amounts shows ₹ •••• instead of your real numbers.',
+    ],
+  },
+  {
     date: '2026-11-15',
     title: '⇅ Reorder your habits',
     points: [
@@ -189,6 +199,7 @@ export const GUIDE: GuideSection[] = [
     items: [
       { icon: '🏠', title: 'Home', what: 'Your dashboard — this month’s money, today’s habits, net worth, and (when on) your Safety Net.' },
       { icon: '💎', title: 'The “More” menu', what: 'Tap the centre gem in the tab bar for everything else, grouped into Money, Life, Vault and System.' },
+      { icon: '🧩', title: 'Home-screen widgets', what: 'Today, Quick add, Habits, Runway, Due soon, Jobs and Headlines, right on your Android home screen. Numbers refresh when you open the app.', how: 'Long-press the home screen → Widgets → Velora. To hide amounts, see Settings → Home-screen widgets.' },
     ],
   },
   {

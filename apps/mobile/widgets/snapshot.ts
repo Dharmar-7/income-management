@@ -1,0 +1,106 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Home-screen widget data.
+//
+// Widgets run outside the app (Android renders them from a headless JS task),
+// where there is no signed-in Clerk session to call our API with. So the app
+// writes a small snapshot of the numbers each widget shows whenever it's opened,
+// and the widgets render from that snapshot. Only News refreshes itself in the
+// background, because its RSS feeds need no login.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const WIDGET_NAMES = [
+  'VeloraToday', 'VeloraQuickAdd', 'VeloraHabits', 'VeloraSafetyNet',
+  'VeloraBills', 'VeloraJobs', 'VeloraNews',
+] as const;
+export type WidgetName = (typeof WIDGET_NAMES)[number];
+
+export type Section = 'today' | 'habits' | 'safety' | 'bills' | 'jobs' | 'news';
+
+// Which data section each widget needs (QuickAdd needs none).
+export const SECTION_OF: Record<WidgetName, Section | null> = {
+  VeloraToday: 'today',
+  VeloraQuickAdd: null,
+  VeloraHabits: 'habits',
+  VeloraSafetyNet: 'safety',
+  VeloraBills: 'bills',
+  VeloraJobs: 'jobs',
+  VeloraNews: 'news',
+};
+
+export interface TodayData {
+  todaySpent: number;
+  monthSpent: number;
+  monthIncome: number;
+  budgetTotal: number | null; // null → no budgets set this month
+  budgetLeft: number | null;
+}
+
+export interface HabitsData {
+  score: number;
+  done: number;
+  due: number;
+  items: { icon: string; name: string; status: 'DONE' | 'PARTIAL' | null }[]; // due today only
+}
+
+export interface SafetyData {
+  hasData: boolean;
+  months: number | null; // runway on essentials
+  fund: number;
+  essentialMonthly: number;
+}
+
+export interface BillItem {
+  name: string;
+  amount: number;
+  due: string; // YYYY-MM-DD (local day)
+  kind: 'bill' | 'emi';
+}
+
+export interface JobsData {
+  state: 'off' | 'no-searches' | 'ok';
+  newCount: number;
+  focusId: string | null; // saved search to open
+  label: string | null;
+  items: { title: string; company: string }[];
+}
+
+export interface NewsData {
+  items: { title: string; source: string; link: string }[];
+}
+
+interface Stamped<T> { at: number; data: T }
+
+export interface WidgetSnapshot {
+  signedIn: boolean;
+  today?: Stamped<TodayData>;
+  habits?: Stamped<HabitsData>;
+  safety?: Stamped<SafetyData>;
+  bills?: Stamped<BillItem[]>;
+  jobs?: Stamped<JobsData>;
+  news?: Stamped<NewsData>;
+}
+
+const SNAPSHOT_KEY = 'velora-widgets-snapshot';
+const HIDE_AMOUNTS_KEY = 'velora-widgets-hide-amounts';
+
+export async function readSnapshot(): Promise<WidgetSnapshot> {
+  try {
+    const raw = await AsyncStorage.getItem(SNAPSHOT_KEY);
+    if (raw) return JSON.parse(raw) as WidgetSnapshot;
+  } catch { /* corrupt → start fresh */ }
+  return { signedIn: false };
+}
+
+export async function writeSnapshot(s: WidgetSnapshot): Promise<void> {
+  await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(s));
+}
+
+export async function readHideAmounts(): Promise<boolean> {
+  return (await AsyncStorage.getItem(HIDE_AMOUNTS_KEY)) === '1';
+}
+
+export async function writeHideAmounts(hide: boolean): Promise<void> {
+  await AsyncStorage.setItem(HIDE_AMOUNTS_KEY, hide ? '1' : '0');
+}

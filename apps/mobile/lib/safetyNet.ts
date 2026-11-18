@@ -67,10 +67,12 @@ export function formatMonths(m: number | null): string {
 
 interface CashBalance { balance: number; totalIn: number; totalOut: number }
 interface SavingRow { id: string; type: string; currentValue: number; sipAmount: number | null }
-interface LoanRow { id: string; emiAmount: number; isActive: boolean }
-interface RecurringRow {
-  id: string; amount: number; type: string;
+// name/emiDay/nextDueDate are also used by the Bills home-screen widget.
+export interface LoanRow { id: string; name: string; emiAmount: number; emiDay: number; isActive: boolean }
+export interface RecurringRow {
+  id: string; name: string; amount: number; type: string;
   frequency: 'WEEKLY' | 'MONTHLY' | 'YEARLY'; isActive: boolean;
+  nextDueDate: string;
   category: { name: string; icon: string } | null;
 }
 interface CategoryAverages {
@@ -79,7 +81,7 @@ interface CategoryAverages {
   totalAvgMonthly: number;
   uncategorizedAvgMonthly: number;
 }
-interface SafetyData {
+export interface SafetyData {
   cash: CashBalance;
   savings: SavingRow[];
   loans: LoanRow[];
@@ -298,6 +300,36 @@ export function computeSafetyNet(
   };
 }
 
+// ─── Non-hook loaders (shared with the home-screen widgets) ──────────────────
+
+export async function fetchSafetyData(token: string): Promise<SafetyData> {
+  const [cash, savings, loans, recurring, averages] = await Promise.all([
+    apiFetch<CashBalance>('/cash/balance', token),
+    apiFetch<SavingRow[]>('/savings', token),
+    apiFetch<LoanRow[]>('/loans', token),
+    apiFetch<RecurringRow[]>('/recurring', token),
+    apiFetch<CategoryAverages>('/reports/category-averages?months=3', token),
+  ]);
+  return { cash, savings, loans, recurring, averages };
+}
+
+// The user's on-device Safety Net choices, read without React.
+export async function readSafetyPrefs(): Promise<{
+  fund: number | null; overrides: Record<string, boolean>; trimmed: string[];
+}> {
+  const [f, o, t] = await Promise.all([
+    AsyncStorage.getItem(FUND_KEY),
+    AsyncStorage.getItem(ESSENTIAL_KEY),
+    AsyncStorage.getItem(TRIM_KEY),
+  ]);
+  const fund = f != null && f !== '' && isFinite(Number(f)) ? Number(f) : null;
+  let overrides: Record<string, boolean> = {};
+  let trimmed: string[] = [];
+  try { overrides = o ? JSON.parse(o) : {}; } catch { /* corrupt → defaults */ }
+  try { trimmed = t ? JSON.parse(t) : []; } catch { /* corrupt → defaults */ }
+  return { fund, overrides, trimmed };
+}
+
 // ─── The hook screens/cards consume ──────────────────────────────────────────
 
 export function useSafetyNet() {
@@ -308,17 +340,7 @@ export function useSafetyNet() {
 
   const q = useQuery<SafetyData>({
     queryKey: ['safety-net'],
-    queryFn: async () => {
-      const token = await getToken();
-      const [cash, savings, loans, recurring, averages] = await Promise.all([
-        apiFetch<CashBalance>('/cash/balance', token!),
-        apiFetch<SavingRow[]>('/savings', token!),
-        apiFetch<LoanRow[]>('/loans', token!),
-        apiFetch<RecurringRow[]>('/recurring', token!),
-        apiFetch<CategoryAverages>('/reports/category-averages?months=3', token!),
-      ]);
-      return { cash, savings, loans, recurring, averages };
-    },
+    queryFn: async () => fetchSafetyData((await getToken())!),
     staleTime: 2 * 60 * 1000,
   });
 
