@@ -2,6 +2,7 @@
 import React from 'react';
 import { FlexWidget, ListWidget, TextWidget } from 'react-native-android-widget';
 import type { WidgetRepresentation } from 'react-native-android-widget';
+import { readerDeepLink } from '@/lib/newsReader';
 import type {
   WidgetName, WidgetSnapshot, TodayData, HabitsData, SafetyData, BillItem, JobsData, NewsData,
 } from './snapshot';
@@ -295,7 +296,7 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
               <FlexWidget
                 key={i}
                 style={{ width: 'match_parent', flexDirection: 'column', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: p.card }}
-                {...open(n.link)}
+                {...open(readerDeepLink({ url: n.link, title: n.title, source: n.source }))}
               >
                 <TextWidget text={n.title} maxLines={2} truncate="END" style={{ fontSize: 13, fontWeight: '600', color: p.text }} />
                 <TextWidget text={n.source} maxLines={1} style={{ fontSize: 10, color: p.faint, marginTop: 1 }} />

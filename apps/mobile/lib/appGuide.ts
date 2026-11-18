@@ -14,6 +14,15 @@ export interface Release { date: string; title: string; points: string[] }
 export const CHANGELOG: Release[] = [
   {
     date: '2026-11-18',
+    title: '📖 Read full news stories in the app',
+    points: [
+      'Tapping a headline (in News, Saved, or the Headlines widget) now opens the whole article inside Velora as clean, easy-to-read text.',
+      'Shows the source, date, reading time and lead image. Share and Original ↗ are at the top.',
+      'Some sites need a subscription or block apps; for those you get what’s available and a button to read it on the site.',
+    ],
+  },
+  {
+    date: '2026-11-18',
     title: '🧩 Home-screen widgets',
     points: [
       'Seven Android widgets: Today (spent today, month, budget left), Quick add, Habits, Runway, Due soon (bills and EMIs), Jobs and Headlines.',
@@ -237,7 +246,7 @@ export const GUIDE: GuideSection[] = [
     items: [
       { icon: '🔥', title: 'Habits', what: 'Build daily habits and keep streaks; tick today’s off straight from Home.' },
       { icon: '📅', title: 'Calendar', what: 'Bills, occasions and reminders on a monthly view.' },
-      { icon: '📰', title: 'News', what: 'Finance, tech and science headlines in plain language, with source links.', how: 'Use the search box to sweep every feed for a company, ticker or topic.' },
+      { icon: '📰', title: 'News', what: 'Finance, tech and science headlines in plain language. Tap one to read the full story inside Velora, as clean text without ads or pop-ups.', how: 'Use the search box to sweep every feed for a company, ticker or topic. Paywalled stories show what’s available plus a button to open the original.' },
       { icon: '🔖', title: 'Saved', what: 'Bookmarked jobs and articles, plus an Applied tab that tracks your job applications through Applied → Interviewing → Offer/Rejected.', how: 'Tap ☆ to save; tap “Mark applied” on a job to track it.' },
       { icon: '📝', title: 'Notes', what: 'Quick notes for anything you want to remember.' },
       { icon: '🗂️', title: 'Documents', what: 'A private vault for receipts, statements and important files.' },

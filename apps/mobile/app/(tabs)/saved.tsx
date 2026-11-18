@@ -5,6 +5,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useScrollToTop } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
+import { readerHref } from '@/lib/newsReader';
 import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
 import { useToast } from '@/context/ToastContext';
@@ -108,7 +109,11 @@ export default function SavedScreen() {
   function renderArticle({ item }: { item: SavedArticle }) {
     return (
       <SwipeRow onDelete={() => removeArticle(item)}>
-        <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => openUrl(item.link)}>
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.7}
+          onPress={() => item.link && router.push(readerHref({ url: item.link, title: item.title, source: item.source, summary: item.summary, from: 'saved' }))}
+        >
           <View style={styles.metaRow}>
             <Text style={styles.source} numberOfLines={1}>{item.source}</Text>
             <View style={styles.actions}>

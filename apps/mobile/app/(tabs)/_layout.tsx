@@ -36,6 +36,7 @@ export default function TabLayout() {
       <Tabs.Screen name="documents"    options={{ title: 'Documents'     }} />
       <Tabs.Screen name="habits"       options={{ title: 'Habits'        }} />
       <Tabs.Screen name="news"         options={{ title: 'News'          }} />
+      <Tabs.Screen name="news-read"    options={{ title: 'Article'       }} />
       <Tabs.Screen name="jobs"         options={{ title: 'Jobs'          }} />
       <Tabs.Screen name="ats"          options={{ title: 'ATS Check'     }} />
       <Tabs.Screen name="safety-net"   options={{ title: 'Safety Net'    }} />

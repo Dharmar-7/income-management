@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -14,7 +14,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useScrollToTop } from '@react-navigation/native';
-import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
 import { useToast } from '@/context/ToastContext';
 import { SkeletonList } from '@/components/Skeleton';
@@ -30,6 +29,7 @@ import {
   type NewsItem,
 } from '@/lib/newsFeeds';
 import { useSavedArticles } from '@/lib/bookmarks';
+import { readerHref } from '@/lib/newsReader';
 import { useWatchlist, syncWatchlistToServer } from '@/lib/watchlist';
 import { useAuth } from '@clerk/clerk-expo';
 
@@ -69,6 +69,7 @@ export default function NewsScreen() {
   const toast = useToast();
   const { isSaved, toggle: toggleSaved } = useSavedArticles();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
+  const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const listRef = useRef<FlatList<NewsItem>>(null);
   useScrollToTop(listRef); // re-tap the News tab → scroll to top
@@ -117,18 +118,10 @@ export default function NewsScreen() {
     getToken().then(t => { if (t) syncWatchlistToServer(watchItems, t); });
   }, [watchItems, getToken]);
 
-  async function openArticle(item: NewsItem) {
+  // Opens the in-app reader (full article as clean text); it links to the original.
+  function openArticle(item: NewsItem) {
     if (!item.link) return;
-    try {
-      await WebBrowser.openBrowserAsync(item.link, {
-        toolbarColor: c.card,
-        controlsColor: c.primary,
-        enableBarCollapsing: true,
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
-      });
-    } catch {
-      // A malformed link shouldn't crash the screen.
-    }
+    router.push(readerHref({ url: item.link, title: item.title, source: item.source, summary: item.summary, from: 'news' }));
   }
 
   async function shareArticle(item: NewsItem) {
