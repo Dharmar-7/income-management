@@ -155,7 +155,7 @@ async function loadJobs(token: string): Promise<JobsData> {
 
 export async function loadNews(): Promise<NewsData> {
   const items = await fetchNews('top');
-  return { items: items.slice(0, 6).map(n => ({ title: n.title, source: n.source, link: n.link })) };
+  return { items: items.slice(0, 20).map(n => ({ title: n.title, source: n.source, link: n.link })) };
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 "use no memo"; // widget layouts are plain functions the widget library calls directly; React Compiler must not transform them
 import React from 'react';
-import { FlexWidget, TextWidget } from 'react-native-android-widget';
+import { FlexWidget, ListWidget, TextWidget } from 'react-native-android-widget';
 import type { WidgetRepresentation } from 'react-native-android-widget';
 import type {
   WidgetName, WidgetSnapshot, TodayData, HabitsData, SafetyData, BillItem, JobsData, NewsData,
@@ -262,32 +262,60 @@ function Jobs({ p, d, at }: { p: Palette; d: JobsData; at: number }) {
   );
 }
 
-function News({ p, d, at }: { p: Palette; d: NewsData; at: number }) {
-  if (d.items.length === 0) {
-    return <Message p={p} title="📰 Headlines" text="Couldn’t load the news. It will retry soon." uri="velora://news" />;
-  }
+// Custom click action handled by taskHandler.ts (fetches fresh headlines).
+export const REFRESH_NEWS = 'REFRESH_NEWS';
+
+function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; refreshing: boolean }) {
   return (
-    <Frame p={p} uri="velora://news">
-      <Header p={p} title="📰 Headlines" right={ago(at)} />
-      <FlexWidget style={{ width: 'match_parent', flexDirection: 'column', marginTop: 6, flexGap: 6 }}>
-        {d.items.slice(0, 4).map((n, i) => (
-          <FlexWidget key={i} style={{ width: 'match_parent', flexDirection: 'column' }} {...open(n.link)}>
-            <TextWidget text={n.title} maxLines={2} truncate="END" style={{ fontSize: 13, fontWeight: '600', color: p.text }} />
-            <TextWidget text={n.source} maxLines={1} style={{ fontSize: 10, color: p.faint }} />
+    // No root click: the list items and header buttons each have their own.
+    <FlexWidget
+      style={{
+        height: 'match_parent', width: 'match_parent', backgroundColor: p.bg,
+        borderRadius: 20, paddingTop: 12, paddingHorizontal: 12, paddingBottom: 6, flexDirection: 'column',
+      }}
+    >
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <TextWidget text="📰 Headlines" style={{ fontSize: 14, fontWeight: '700', color: p.text }} {...open('velora://news')} />
+        <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TextWidget text={refreshing ? 'refreshing…' : ago(at)} style={{ fontSize: 11, color: p.faint }} />
+          <FlexWidget
+            style={{ marginLeft: 6, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: p.card }}
+            clickAction={REFRESH_NEWS}
+          >
+            <TextWidget text="↻" style={{ fontSize: 15, fontWeight: '700', color: p.primary }} />
           </FlexWidget>
-        ))}
+        </FlexWidget>
       </FlexWidget>
-    </Frame>
+      {d.items.length === 0
+        ? <TextWidget text="Couldn’t load the news. Tap ↻ to try again." maxLines={2} style={{ fontSize: 13, color: p.muted, marginTop: 8 }} />
+        : (
+          // Scrollable: Android renders this as a native list inside the widget.
+          <ListWidget style={{ height: 'match_parent', width: 'match_parent', marginTop: 6 }}>
+            {d.items.map((n, i) => (
+              <FlexWidget
+                key={i}
+                style={{ width: 'match_parent', flexDirection: 'column', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: p.card }}
+                {...open(n.link)}
+              >
+                <TextWidget text={n.title} maxLines={2} truncate="END" style={{ fontSize: 13, fontWeight: '600', color: p.text }} />
+                <TextWidget text={n.source} maxLines={1} style={{ fontSize: 10, color: p.faint, marginTop: 1 }} />
+              </FlexWidget>
+            ))}
+          </ListWidget>
+        )}
+    </FlexWidget>
   );
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palette): React.JSX.Element {
+function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palette, refreshing: boolean): React.JSX.Element {
   if (name === 'VeloraQuickAdd') return <QuickAdd p={p} />;
   if (name === 'VeloraNews') {
     // News needs no sign-in: it's public RSS, refreshed in the background.
-    return s.news ? <News p={p} d={s.news.data} at={s.news.at} /> : <Message p={p} title="📰 Headlines" text="Loading headlines…" uri="velora://news" />;
+    return s.news
+      ? <News p={p} d={s.news.data} at={s.news.at} refreshing={refreshing} />
+      : <Message p={p} title="📰 Headlines" text="Loading headlines…" uri="velora://news" />;
   }
   if (!s.signedIn) {
     return <Message p={p} title="Velora" text="Sign in to Velora to see this widget." />;
@@ -303,6 +331,9 @@ function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palett
   }
 }
 
-export function renderWidget(name: WidgetName, s: WidgetSnapshot, hide: boolean): WidgetRepresentation {
-  return { light: renderFor(name, s, hide, LIGHT), dark: renderFor(name, s, hide, DARK) };
+export function renderWidget(
+  name: WidgetName, s: WidgetSnapshot, hide: boolean, opts: { refreshing?: boolean } = {},
+): WidgetRepresentation {
+  const r = opts.refreshing ?? false;
+  return { light: renderFor(name, s, hide, LIGHT, r), dark: renderFor(name, s, hide, DARK, r) };
 }

@@ -18,7 +18,7 @@ export const CHANGELOG: Release[] = [
     points: [
       'Seven Android widgets: Today (spent today, month, budget left), Quick add, Habits, Runway, Due soon (bills and EMIs), Jobs and Headlines.',
       'Add them by long-pressing your home screen → Widgets → Velora. Tap a widget to jump to that part of the app.',
-      'They update when you open Velora. Headlines also refreshes on its own every half hour.',
+      'They update when you open Velora. Headlines holds 20 stories you can scroll, refreshes on its own every half hour, and has a ↻ button for the latest right away.',
       'Settings → Home-screen widgets → Hide amounts shows ₹ •••• instead of your real numbers.',
     ],
   },
