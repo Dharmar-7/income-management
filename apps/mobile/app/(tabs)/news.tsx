@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -76,6 +76,23 @@ export default function NewsScreen() {
   const [category, setCategory] = useState<CategoryKey>('top');
   const [search, setSearch] = useState('');
   const searchTerm = search.trim();
+
+  // Keep the reading position when coming back from an article: remember the
+  // offset and restore it on focus (Android can drop a hidden list's scroll).
+  const offsetRef = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      const y = offsetRef.current;
+      if (y <= 0) return;
+      const id = requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: y, animated: false }));
+      return () => cancelAnimationFrame(id);
+    }, []),
+  );
+  // A different category or search is a new list: start it at the top.
+  useEffect(() => {
+    offsetRef.current = 0;
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [category, searchTerm]);
 
   // Deep link from a watched-news notification: `q` = the term to search.
   const handledQRef = useRef<string | null>(null);
@@ -279,6 +296,12 @@ export default function NewsScreen() {
           renderItem={renderCard}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          onScroll={e => { offsetRef.current = e.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={100}
+          // New headlines arriving at the top (a background refresh) shouldn't
+          // push the story you were reading off screen. Near the very top, it
+          // still scrolls up to show the new ones.
+          maintainVisibleContentPosition={{ minIndexForVisible: 0, autoscrollToTopThreshold: 40 }}
           refreshControl={<RefreshControl refreshing={active.isFetching} onRefresh={() => active.refetch()} tintColor={c.primary} />}
         />
       )}

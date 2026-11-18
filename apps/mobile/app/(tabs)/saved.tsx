@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useScrollToTop } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { readerHref } from '@/lib/newsReader';
 import * as WebBrowser from 'expo-web-browser';
 import { useTheme } from '@/context/ThemeContext';
@@ -42,6 +42,17 @@ export default function SavedScreen() {
   const articlesRef = useRef<FlatList<SavedArticle>>(null);
   // Re-tapping the Saved tab scrolls the visible list back to the top.
   useScrollToTop(tab === 'jobs' ? jobsRef : tab === 'tracker' ? trackerRef : articlesRef);
+
+  // Coming back from the reader: restore where the articles list was.
+  const articlesOffset = useRef(0);
+  useFocusEffect(
+    useCallback(() => {
+      const y = articlesOffset.current;
+      if (y <= 0) return;
+      const id = requestAnimationFrame(() => articlesRef.current?.scrollToOffset({ offset: y, animated: false }));
+      return () => cancelAnimationFrame(id);
+    }, []),
+  );
 
   async function openUrl(url: string) {
     if (!url) return;
@@ -236,6 +247,8 @@ export default function SavedScreen() {
           renderItem={renderArticle}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          onScroll={e => { articlesOffset.current = e.nativeEvent.contentOffset.y; }}
+          scrollEventThrottle={100}
         />
       )}
     </SafeAreaView>
