@@ -19,6 +19,7 @@ import { apiFetch } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
 import { autoSmsSync, smsSupported, undoSmsSync } from '@/lib/smsSync';
 import { refreshWidgets, clearWidgets } from '@/widgets/refresh';
+import { flushHabitTaps } from '@/widgets/habitTaps';
 
 // Crash + error reporting — inert unless EXPO_PUBLIC_SENTRY_DSN is set at
 // build time (eas.json env or an EAS secret).
@@ -251,23 +252,38 @@ function SmsAutoSync() {
 // meanwhile). On sign-out, personal data is wiped from the widgets.
 function WidgetSync() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) { clearWidgets().catch(() => undefined); return; }
+
+    // Habits ticked on the home-screen widget are queued on the phone; send
+    // them right away so the Habits screen shows them.
+    const sendHabitTaps = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        if (await flushHabitTaps(token) > 0) {
+          qc.invalidateQueries({ queryKey: ['habits'] });
+          refreshWidgets(getToken, { force: ['habits'] });
+        }
+      } catch { /* retried on the next open */ }
+    };
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const soon = () => {
       clearTimeout(timer);
       timer = setTimeout(() => { refreshWidgets(getToken); }, 8000);
     };
+    sendHabitTaps();
     soon();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') soon();
+      if (state === 'active') { sendHabitTaps(); soon(); }
       else if (state === 'background') refreshWidgets(getToken, { force: ['today', 'habits'] });
     });
     return () => { clearTimeout(timer); sub.remove(); };
-  }, [isLoaded, isSignedIn, getToken]);
+  }, [isLoaded, isSignedIn, getToken, qc]);
 
   return null;
 }

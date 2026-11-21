@@ -37,11 +37,20 @@ export interface TodayData {
   budgetLeft: number | null;
 }
 
+export type HabitStatus = 'DONE' | 'PARTIAL' | null;
+export interface HabitItem {
+  id: string;
+  icon: string;
+  name: string;
+  scheduleDays: number[];   // 0=Sun..6=Sat; the widget filters to today's at draw time
+  serverStatus: HabitStatus; // what the server had for `day` when loaded
+  status: HabitStatus;       // what the widget shows (server + taps not yet synced)
+  streak: number;            // server's current streak, counting serverStatus
+}
+// All habits in board order, for one local calendar day.
 export interface HabitsData {
-  score: number;
-  done: number;
-  due: number;
-  items: { icon: string; name: string; status: 'DONE' | 'PARTIAL' | null }[]; // due today only
+  day: string; // YYYY-MM-DD
+  items: HabitItem[];
 }
 
 export interface SafetyData {

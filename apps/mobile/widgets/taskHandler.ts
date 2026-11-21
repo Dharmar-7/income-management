@@ -2,11 +2,12 @@ import type { WidgetTaskHandlerProps } from 'react-native-android-widget';
 import { readSnapshot, writeSnapshot, readHideAmounts, WIDGET_NAMES, type WidgetName } from './snapshot';
 import { renderWidget, REFRESH_NEWS } from './VeloraWidgets';
 import { loadNews } from './refresh';
+import { TOGGLE_HABIT, toggleHabitTap } from './habitTaps';
 
 // Android calls this headlessly (app closed) when a widget is added, resized,
 // tapped with a custom action, or hits its periodic update. Everything renders
 // from the stored snapshot; only News fetches, because its public RSS needs no
-// sign-in.
+// sign-in. Habit ticks are stored locally and sent when the app next opens.
 
 const NEWS_MAX_AGE_MS = 25 * 60_000;
 
@@ -15,11 +16,17 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 }
 
 export async function widgetTaskHandler({
-  widgetInfo, widgetAction, clickAction, renderWidget: draw,
+  widgetInfo, widgetAction, clickAction, clickActionData, renderWidget: draw,
 }: WidgetTaskHandlerProps) {
   if (widgetAction === 'WIDGET_DELETED') return;
   const name = widgetInfo.widgetName as WidgetName;
   if (!(WIDGET_NAMES as readonly string[]).includes(name)) return;
+
+  // Tick/untick a habit from the widget; it's saved to the server on next app open.
+  if (widgetAction === 'WIDGET_CLICK' && clickAction === TOGGLE_HABIT) {
+    const id = clickActionData?.id;
+    if (typeof id === 'string') await toggleHabitTap(id);
+  }
 
   let snap = await readSnapshot();
   const hide = await readHideAmounts();

@@ -3,8 +3,9 @@ import React from 'react';
 import { FlexWidget, ListWidget, TextWidget } from 'react-native-android-widget';
 import type { WidgetRepresentation } from 'react-native-android-widget';
 import { readerDeepLink } from '@/lib/newsReader';
+import { TOGGLE_HABIT, rollHabits, dueToday, shownStreak } from './habitTaps';
 import type {
-  WidgetName, WidgetSnapshot, TodayData, HabitsData, SafetyData, BillItem, JobsData, NewsData,
+  WidgetName, WidgetSnapshot, TodayData, HabitsData, HabitItem, SafetyData, BillItem, JobsData, NewsData,
 } from './snapshot';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,29 +165,99 @@ function QuickAdd({ p }: { p: Palette }) {
   );
 }
 
-function Habits({ p, d, at }: { p: Palette; d: HabitsData; at: number }) {
-  const uri = 'velora://habits';
-  if (d.items.length === 0) {
-    return <Message p={p} title="🔥 Habits" text="Nothing scheduled today. Add habits in Velora." uri={uri} />;
-  }
-  const mark = (s: HabitsData['items'][number]['status']) => (s === 'DONE' ? '✅' : s === 'PARTIAL' ? '🟡' : '⬜');
+// Habits: a progress bar for today plus a scrollable list where each circle
+// ticks the habit right on the home screen (see habitTaps.ts for how the tap
+// reaches the server).
+function HabitRow({ p, h }: { p: Palette; h: HabitItem }) {
+  const done = h.status === 'DONE';
+  const half = h.status === 'PARTIAL';
+  const streak = shownStreak(h);
   return (
-    <Frame p={p} uri={uri}>
-      <Header p={p} title={`🔥 Habits · ${d.done}/${d.due}`} right={`${d.score}/100`} />
-      <FlexWidget style={{ width: 'match_parent', flexDirection: 'column', marginTop: 6, flexGap: 3 }}>
-        {d.items.slice(0, 5).map((h, i) => (
-          <TextWidget
-            key={i}
-            text={`${mark(h.status)}  ${h.icon} ${h.name}`}
-            maxLines={1}
-            truncate="END"
-            style={{ fontSize: 13, color: h.status === 'DONE' ? p.muted : p.text }}
-          />
-        ))}
-        {d.items.length > 5 ? <TextWidget text={`+${d.items.length - 5} more`} style={{ fontSize: 11, color: p.faint }} /> : null}
+    <FlexWidget
+      style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', paddingVertical: 5 }}
+      {...open('velora://habits')}
+    >
+      <TextWidget text={h.icon} style={{ fontSize: 17 }} />
+      <FlexWidget style={{ flex: 1, flexDirection: 'column', marginLeft: 10 }}>
+        <TextWidget
+          text={h.name}
+          maxLines={1}
+          truncate="END"
+          style={{ fontSize: 14, fontWeight: done ? '400' : '600', color: done ? p.faint : p.text }}
+        />
+        {streak > 0
+          ? <TextWidget text={`🔥 ${streak} day${streak === 1 ? '' : 's'}`} style={{ fontSize: 10, color: p.faint, marginTop: 1 }} />
+          : null}
       </FlexWidget>
-      <TextWidget text={ago(at)} style={{ fontSize: 10, color: p.faint, marginTop: 4 }} />
-    </Frame>
+      {/* Generous padding: the whole area around the circle is the tap target. */}
+      <FlexWidget
+        style={{ paddingLeft: 14, paddingRight: 2, paddingVertical: 4 }}
+        clickAction={TOGGLE_HABIT}
+        clickActionData={{ id: h.id }}
+      >
+        <FlexWidget
+          style={{
+            width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+            backgroundColor: done ? p.success : half ? p.warning : p.bg,
+            borderWidth: done || half ? 0 : 2,
+            borderColor: p.faint,
+          }}
+        >
+          {done || half
+            ? <TextWidget text={done ? '✓' : '½'} style={{ fontSize: 15, fontWeight: '800', color: '#ffffff' }} />
+            : null}
+        </FlexWidget>
+      </FlexWidget>
+    </FlexWidget>
+  );
+}
+
+function Habits({ p, d }: { p: Palette; d: HabitsData }) {
+  const uri = 'velora://habits';
+  const data = rollHabits(d);
+  const items = dueToday(data);
+  if (items.length === 0) {
+    return <Message p={p} title="🔥 Habits" text="Nothing scheduled today. Enjoy the rest day 🌿" uri={uri} />;
+  }
+  const done = items.filter(h => h.status === 'DONE').length;
+  const half = items.filter(h => h.status === 'PARTIAL').length;
+  const pct = Math.round(((done + half / 2) / items.length) * 100);
+  const allDone = done === items.length;
+  const unsynced = items.some(h => h.status !== h.serverStatus);
+  const left = items.length - done;
+  const status = allDone ? 'All done today 🎉' : `${left} left today`;
+
+  return (
+    // No root click: rows open the app, circles tick the habit.
+    <FlexWidget
+      style={{
+        height: 'match_parent', width: 'match_parent', backgroundColor: p.bg,
+        borderRadius: 20, paddingTop: 12, paddingHorizontal: 14, paddingBottom: 6, flexDirection: 'column',
+      }}
+    >
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} {...open(uri)}>
+        <TextWidget text="🔥 Habits" style={{ fontSize: 14, fontWeight: '700', color: p.text }} />
+        <TextWidget text={`${done}/${items.length}`} style={{ fontSize: 15, fontWeight: '800', color: allDone ? p.success : p.primary }} />
+      </FlexWidget>
+
+      {/* Progress bar: two weighted segments (widgets have no percentage widths). */}
+      <FlexWidget style={{ width: 'match_parent', height: 6, flexDirection: 'row', borderRadius: 3, backgroundColor: p.card, marginTop: 8 }}>
+        {pct > 0 ? <FlexWidget style={{ flex: pct, height: 6, borderRadius: 3, backgroundColor: allDone ? p.success : p.primary }} /> : null}
+        {pct < 100 ? <FlexWidget style={{ flex: 100 - pct, height: 6 }} /> : null}
+      </FlexWidget>
+
+      <TextWidget
+        text={unsynced ? `${status} · saves when you open Velora` : status}
+        maxLines={1}
+        truncate="END"
+        style={{ fontSize: 11, color: p.muted, marginTop: 5 }}
+      />
+
+      {/* Scrollable, so every habit due today fits — no "+3 more". */}
+      <ListWidget style={{ height: 'match_parent', width: 'match_parent', marginTop: 4 }}>
+        {items.map(h => <HabitRow key={h.id} p={p} h={h} />)}
+      </ListWidget>
+    </FlexWidget>
   );
 }
 
@@ -324,7 +395,8 @@ function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palett
   const loading = (title: string) => <Message p={p} title={title} text="Open Velora once to load this." />;
   switch (name) {
     case 'VeloraToday': return s.today ? <Today p={p} d={s.today.data} at={s.today.at} hide={hide} /> : loading('💸 Today');
-    case 'VeloraHabits': return s.habits ? <Habits p={p} d={s.habits.data} at={s.habits.at} /> : loading('🔥 Habits');
+    // `day` check: snapshots saved by the first widget version lack ids and can't be ticked.
+    case 'VeloraHabits': return s.habits?.data?.day ? <Habits p={p} d={s.habits.data} /> : loading('🔥 Habits');
     case 'VeloraSafetyNet': return s.safety ? <SafetyNet p={p} d={s.safety.data} hide={hide} /> : loading('🛟 Runway');
     case 'VeloraBills': return s.bills ? <Bills p={p} d={s.bills.data} at={s.bills.at} hide={hide} /> : loading('🧾 Due soon');
     case 'VeloraJobs': return s.jobs ? <Jobs p={p} d={s.jobs.data} at={s.jobs.at} /> : loading('💼 Jobs');

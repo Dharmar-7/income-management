@@ -13,6 +13,15 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-21',
+    title: '✅ Tick habits from the home screen',
+    points: [
+      'The Habits widget is redesigned: a progress bar for today, and a scrollable list of every habit due today with its streak.',
+      'Tap the circle next to a habit to mark it done (tap again to undo). It updates instantly and is saved to your account the next time you open Velora.',
+      'At midnight the widget starts the new day on its own.',
+    ],
+  },
+  {
     date: '2026-11-18',
     title: '📖 Read full news stories in the app',
     points: [
@@ -208,7 +217,7 @@ export const GUIDE: GuideSection[] = [
     items: [
       { icon: '🏠', title: 'Home', what: 'Your dashboard — this month’s money, today’s habits, net worth, and (when on) your Safety Net.' },
       { icon: '💎', title: 'The “More” menu', what: 'Tap the centre gem in the tab bar for everything else, grouped into Money, Life, Vault and System.' },
-      { icon: '🧩', title: 'Home-screen widgets', what: 'Today, Quick add, Habits, Runway, Due soon, Jobs and Headlines, right on your Android home screen. Numbers refresh when you open the app.', how: 'Long-press the home screen → Widgets → Velora. To hide amounts, see Settings → Home-screen widgets.' },
+      { icon: '🧩', title: 'Home-screen widgets', what: 'Today, Quick add, Habits, Runway, Due soon, Jobs and Headlines, right on your Android home screen. Numbers refresh when you open the app. On the Habits widget, tap a habit’s circle to tick it off.', how: 'Long-press the home screen → Widgets → Velora. To hide amounts, see Settings → Home-screen widgets.' },
     ],
   },
   {

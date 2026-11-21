@@ -11,6 +11,7 @@ import {
   type TodayData, type HabitsData, type SafetyData, type BillItem, type JobsData, type NewsData,
 } from './snapshot';
 import { renderWidget } from './VeloraWidgets';
+import { applyPendingTaps } from './habitTaps';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Keeps the widget snapshot fresh. Runs from the app (signed in), and only
@@ -69,22 +70,22 @@ async function loadToday(token: string): Promise<TodayData> {
 }
 
 interface Board {
-  dailyScore: number; dailyDone: number; dailyDue: number;
-  habits: { name: string; icon: string; scheduleDays: number[]; today: 'DONE' | 'PARTIAL' | null }[];
+  habits: {
+    id: string; name: string; icon: string; scheduleDays: number[];
+    today: 'DONE' | 'PARTIAL' | null; currentStreak: number;
+  }[];
 }
 
 async function loadHabits(token: string): Promise<HabitsData> {
-  const today = localIso();
-  const b = await apiFetch<Board>(`/habits?today=${today}`, token);
-  const dow = new Date().getDay(); // 0=Sun, same convention as scheduleDays
-  return {
-    score: b.dailyScore,
-    done: b.dailyDone,
-    due: b.dailyDue,
-    items: b.habits
-      .filter(h => h.scheduleDays.includes(dow))
-      .map(h => ({ icon: h.icon, name: h.name, status: h.today })),
-  };
+  const day = localIso();
+  const b = await apiFetch<Board>(`/habits?today=${day}`, token);
+  return applyPendingTaps({
+    day,
+    items: b.habits.map(h => ({
+      id: h.id, icon: h.icon, name: h.name, scheduleDays: h.scheduleDays,
+      serverStatus: h.today, status: h.today, streak: h.currentStreak,
+    })),
+  });
 }
 
 function safetyFrom(raw: RawSafety, prefs: Awaited<ReturnType<typeof readSafetyPrefs>>): SafetyData {

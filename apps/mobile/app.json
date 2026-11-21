@@ -83,7 +83,7 @@
             {
               "name": "VeloraHabits",
               "label": "Velora · Habits",
-              "description": "Today's habits and your daily score",
+              "description": "Tick off today's habits right from your home screen",
               "minWidth": "180dp",
               "minHeight": "110dp",
               "targetCellWidth": 4,
