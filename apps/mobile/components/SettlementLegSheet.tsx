@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import type { SettlementItem } from '@/app/(tabs)/settlements';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import DatePickerField from '@/components/DatePickerField';
 import { useTheme } from '@/context/ThemeContext';
@@ -39,7 +40,8 @@ interface Props {
   kind: 'PRINCIPAL' | 'REPAYMENT';
   direction: 'SENT' | 'RECEIVED';
   onClose: () => void;
-  onSaved: () => void;
+  // Receives the updated tab, so the screen can say whether it's now settled.
+  onSaved: (updated: SettlementItem) => void;
 }
 
 // Adds one leg (another send, or a return) to an existing settlement tab. Pick a
@@ -96,7 +98,7 @@ export default function SettlementLegSheet({ visible, settlementId, kind, direct
     setError('');
     try {
       const token = await getToken();
-      await apiFetch(`/settlements/${settlementId}/entries`, token!, {
+      const updated = await apiFetch<SettlementItem>(`/settlements/${settlementId}/entries`, token!, {
         method: 'POST',
         body: JSON.stringify({
           kind, amount: amt,
@@ -104,7 +106,7 @@ export default function SettlementLegSheet({ visible, settlementId, kind, direct
           ...(linkedTxId && { transactionId: linkedTxId }),
         }),
       });
-      onSaved();
+      onSaved(updated);
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong.');
     } finally {

@@ -35,7 +35,7 @@ interface Leg {
 interface Props {
   visible: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (created: { personName: string }) => void;
 }
 
 function formatINR(n: number) {
@@ -121,7 +121,7 @@ export default function AddSettlementSheet({ visible, onClose, onSaved }: Props)
     setError('');
     try {
       const token = await getToken();
-      await apiFetch('/settlements', token!, {
+      const created = await apiFetch<{ personName: string }>('/settlements', token!, {
         method: 'POST',
         body: JSON.stringify({
           personName: personName.trim(),
@@ -135,7 +135,7 @@ export default function AddSettlementSheet({ visible, onClose, onSaved }: Props)
           })),
         }),
       });
-      onSaved();
+      onSaved(created);
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong.');
     } finally {

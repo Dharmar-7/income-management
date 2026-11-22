@@ -13,6 +13,15 @@ export interface Release { date: string; title: string; points: string[] }
 
 export const CHANGELOG: Release[] = [
   {
+    date: '2026-11-22',
+    title: '🤝 Settlements: clearer messages and Reopen',
+    points: [
+      'Every action now confirms itself: creating a tab, adding a send or a return, settling, removing a transaction and deleting a tab.',
+      'When a return pays a tab off, you’re told it’s settled and moved to History, with a View button to jump there.',
+      'Settled tabs in History have a ↩ Reopen button. It undoes the last return and moves the tab back to Pending.',
+    ],
+  },
+  {
     date: '2026-11-21',
     title: '✅ Tick habits from the home screen',
     points: [
@@ -228,7 +237,7 @@ export const GUIDE: GuideSection[] = [
       { icon: '🎯', title: 'Budgets', what: 'Set a monthly cap per category and watch how much is left.' },
       { icon: '🔄', title: 'Recurring', what: 'Log repeating bills, EMIs and subscriptions so they’re expected, not surprises.' },
       { icon: '🏦', title: 'Loans', what: 'Track each loan’s EMI, what you’ve paid and what’s left.' },
-      { icon: '🤝', title: 'Settlements', what: 'Money you owe or are owed by other people — settle up without forgetting.' },
+      { icon: '🤝', title: 'Settlements', what: 'Money you owe or are owed by other people — settle up without forgetting.', how: 'Tap ＋ to open a tab, then add sends and returns. A tab moves to History once it’s paid off; use ↩ Reopen there to undo the last return.' },
     ],
   },
   {

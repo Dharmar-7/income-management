@@ -48,6 +48,12 @@ export class SettlementsController {
     return this.service.settle(clerkId, id, dto);
   }
 
+  // Undo the return that settled a tab, moving it back to Pending.
+  @Post(':id/reopen')
+  reopen(@CurrentUser() clerkId: string, @Param('id') id: string) {
+    return this.service.reopen(clerkId, id);
+  }
+
   @Delete(':id')
   cancel(@CurrentUser() clerkId: string, @Param('id') id: string) {
     return this.service.cancel(clerkId, id);

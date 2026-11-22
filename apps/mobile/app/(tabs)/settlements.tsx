@@ -104,11 +104,11 @@ export default function SettlementsScreen() {
 
   // Runs a confirmed action and reports the outcome, so a delete or settle
   // never finishes (or fails) silently after the dialog closes.
-  async function runAction(action: () => Promise<unknown>, done: string, failed: string) {
+  async function runAction<T>(action: () => Promise<T>, onDone: (result: T) => void, failed: string) {
     try {
-      await action();
+      const result = await action();
       invalidateAll();
-      toast.show(done, { type: 'success' });
+      onDone(result);
     } catch (e) {
       toast.show(e instanceof Error && e.message ? `${failed}: ${e.message}` : failed, { type: 'error' });
     }
@@ -126,7 +126,7 @@ export default function SettlementsScreen() {
           method: 'POST',
           body: JSON.stringify({ settledAt: new Date().toISOString() }),
         });
-      }, `Settled with ${item.personName}. Moved to History.`, 'Couldn’t settle'),
+      }, () => settledToast(item), 'Couldn’t settle'),
     });
   }
 
@@ -140,7 +140,7 @@ export default function SettlementsScreen() {
       onConfirm: () => runAction(async () => {
         const token = await getToken();
         await apiFetch(`/settlements/${item.id}/entries/${entry.id}`, token!, { method: 'DELETE' });
-      }, 'Transaction removed from the tab', 'Couldn’t remove it'),
+      }, () => toast.show('Transaction removed from the tab', { type: 'success' }), 'Couldn’t remove it'),
     });
   }
 
@@ -154,7 +154,53 @@ export default function SettlementsScreen() {
       onConfirm: () => runAction(async () => {
         const token = await getToken();
         await apiFetch(`/settlements/${item.id}`, token!, { method: 'DELETE' });
-      }, `Tab with ${item.personName} deleted`, 'Couldn’t delete the tab'),
+      }, () => toast.show(`Tab with ${item.personName} deleted`, { type: 'success' }), 'Couldn’t delete the tab'),
+    });
+  }
+
+  // A tab just got fully paid: say so, and offer to jump to History where it went.
+  function settledToast(item: Pick<SettlementItem, 'personName' | 'direction'>) {
+    toast.show(
+      item.direction === 'SENT'
+        ? `🎉 ${item.personName} paid you back in full. Tab moved to History.`
+        : `🎉 You’ve paid ${item.personName} back in full. Tab moved to History.`,
+      { type: 'success', actionLabel: 'View', onAction: () => setTab('history') },
+    );
+  }
+
+  // After adding a send or a return from the leg sheet.
+  function legSaved(updated: SettlementItem, kind: 'PRINCIPAL' | 'REPAYMENT') {
+    setLegSheet(null);
+    invalidateAll();
+    if (updated.status === 'SETTLED') { settledToast(updated); return; }
+    const left = `${formatINR(updated.outstanding)} ${updated.direction === 'SENT' ? 'still owed to you' : 'still to pay'}`;
+    toast.show(kind === 'REPAYMENT' ? `Return recorded · ${left}` : `Added to ${updated.personName}’s tab · ${left}`, { type: 'success' });
+  }
+
+  // Settled tab → back to Pending, by undoing the return that closed it.
+  function handleReopen(item: SettlementItem) {
+    const lastReturn = [...item.entries].reverse().find(e => e.kind === 'REPAYMENT');
+    if (!lastReturn) return;
+    setAlertData({
+      title: 'Reopen this tab?',
+      message:
+        `This undoes the last return of ${formatINR(lastReturn.amount)} (${shortDate(lastReturn.occurredAt)}) and moves the tab with ${item.personName} back to Pending.` +
+        (lastReturn.transaction ? ' Its linked transaction goes back to normal income/expense.' : ''),
+      icon: '↩️',
+      confirmLabel: 'Reopen',
+      onConfirm: () => runAction(async () => {
+        const token = await getToken();
+        return apiFetch<SettlementItem>(`/settlements/${item.id}/reopen`, token!, { method: 'POST' });
+      }, (updated) => {
+        if (updated.status === 'PENDING') {
+          toast.show(`Tab with ${item.personName} is back in Pending`, {
+            type: 'success', actionLabel: 'View', onAction: () => setTab('pending'),
+          });
+        } else {
+          // Returns still cover the full amount (e.g. it was overpaid).
+          toast.show('Last return undone, but the tab is still fully paid', { type: 'info' });
+        }
+      }, 'Couldn’t reopen the tab'),
     });
   }
 
@@ -227,6 +273,7 @@ export default function SettlementsScreen() {
             onSettleFull={() => handleSettleFull(item)}
             onRemoveEntry={(entry) => handleRemoveEntry(item, entry)}
             onDelete={() => handleDeleteTab(item)}
+            onReopen={() => handleReopen(item)}
           />
         ))}
       </ScrollView>
@@ -239,7 +286,11 @@ export default function SettlementsScreen() {
       <AddSettlementSheet
         visible={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        onSaved={() => { setSheetOpen(false); invalidateAll(); }}
+        onSaved={(created) => {
+          setSheetOpen(false);
+          invalidateAll();
+          toast.show(`Tab with ${created.personName} created`, { type: 'success' });
+        }}
       />
 
       {legSheet && (
@@ -249,7 +300,7 @@ export default function SettlementsScreen() {
           kind={legSheet.kind}
           direction={legSheet.direction}
           onClose={() => setLegSheet(null)}
-          onSaved={() => { setLegSheet(null); invalidateAll(); }}
+          onSaved={(updated) => legSaved(updated, legSheet.kind)}
         />
       )}
 
@@ -272,11 +323,11 @@ export default function SettlementsScreen() {
 // ─── Settlement Card ──────────────────────────────────────────────────────────
 
 function SettlementCard({
-  item, s, c, onAddSend, onRecordReturn, onSettleFull, onRemoveEntry, onDelete,
+  item, s, c, onAddSend, onRecordReturn, onSettleFull, onRemoveEntry, onDelete, onReopen,
 }: {
   item: SettlementItem; s: any; c: Theme;
   onAddSend: () => void; onRecordReturn: () => void; onSettleFull: () => void;
-  onRemoveEntry: (e: SettlementEntry) => void; onDelete: () => void;
+  onRemoveEntry: (e: SettlementEntry) => void; onDelete: () => void; onReopen: () => void;
 }) {
   const isSent = item.direction === 'SENT';
   const isPending = item.status === 'PENDING';
@@ -374,6 +425,11 @@ function SettlementCard({
         </>
       ) : (
         <View style={s.cardActions}>
+          {isSettled && item.entries.some(e => e.kind === 'REPAYMENT') && (
+            <TouchableOpacity style={[s.actionBtn, s.returnBtn]} onPress={onReopen}>
+              <Text style={s.returnBtnText}>↩ Reopen</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={[s.actionBtn, s.removeBtn, { flex: 1 }]} onPress={onDelete}>
             <Text style={s.removeBtnText}>🗑 Delete tab</Text>
           </TouchableOpacity>

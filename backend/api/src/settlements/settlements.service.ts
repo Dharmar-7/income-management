@@ -166,6 +166,32 @@ export class SettlementsService {
     return this.getOne(userId, id);
   }
 
+  // Reopen a settled tab: undo the most recent return (the one that closed it),
+  // restoring its linked transaction to normal income/expense. The tab then
+  // recomputes to PENDING with that amount outstanding again.
+  async reopen(clerkId: string, id: string) {
+    const userId = await this.resolveUserId(clerkId);
+    const settlement = await this.assertOwner(userId, id);
+    if (settlement.status !== 'SETTLED') {
+      throw new BadRequestException('Only settled tabs can be reopened.');
+    }
+    await this.ensureEntries(settlement);
+
+    const last = await this.prisma.settlementEntry.findFirst({
+      where: { settlementId: id, kind: 'REPAYMENT' },
+      orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (!last) throw new BadRequestException('This tab has no return to undo.');
+
+    if (last.transactionId) {
+      await this.restoreTx(userId, last.transactionId, settlement.direction as Direction, 'REPAYMENT');
+    }
+    await this.prisma.settlementEntry.delete({ where: { id: last.id } });
+
+    await this.recompute(id, settlement.direction as Direction);
+    return this.getOne(userId, id);
+  }
+
   // Delete the whole tab — restore every linked transaction to its natural type.
   async cancel(clerkId: string, id: string) {
     const userId = await this.resolveUserId(clerkId);
