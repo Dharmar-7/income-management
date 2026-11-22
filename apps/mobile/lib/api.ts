@@ -42,3 +42,16 @@ export async function apiFetch<T>(
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
+
+// The API runs on Render's free tier, which sleeps after ~15 min idle and takes
+// 30-50 s to wake. The app shows cached data instantly, so without this the
+// first save of the day (e.g. a cash spend) would pay that whole wait. Pinging
+// the shallow /health on open starts the wake-up while the user is still
+// looking around. /health touches no database, so it costs no Neon compute.
+let lastWake = 0;
+export function wakeApi(): void {
+  const now = Date.now();
+  if (now - lastWake < 60_000) return;
+  lastWake = now;
+  fetch(`${API_URL}/health`).catch(() => undefined);
+}

@@ -15,7 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { ThemeProvider, useTheme } from '@/context/ThemeContext';
 import { ToastProvider, useToast } from '@/context/ToastContext';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, wakeApi } from '@/lib/api';
 import { registerPushToken } from '@/lib/pushNotifications';
 import { autoSmsSync, smsSupported, undoSmsSync } from '@/lib/smsSync';
 import { refreshWidgets, clearWidgets } from '@/widgets/refresh';
@@ -250,6 +250,17 @@ function SmsAutoSync() {
 // snapshot when the app opens (a few seconds later, so the automatic SMS import
 // lands first) and again as it goes to the background (to catch anything added
 // meanwhile). On sign-out, personal data is wiped from the widgets.
+// Wake the (free-tier, sleeping) API the moment the app opens or returns to
+// the foreground, before the user tries to save anything.
+function ApiWarmup() {
+  useEffect(() => {
+    wakeApi();
+    const sub = AppState.addEventListener('change', (state) => { if (state === 'active') wakeApi(); });
+    return () => sub.remove();
+  }, []);
+  return null;
+}
+
 function WidgetSync() {
   const { isSignedIn, isLoaded, getToken } = useAuth();
   const qc = useQueryClient();
@@ -320,6 +331,7 @@ function RootLayout() {
               <NotificationRouter />
               <SmsAutoSync />
               <WidgetSync />
+              <ApiWarmup />
               <Slot />
             </PersistQueryClientProvider>
           </ClerkProvider>
