@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsNumber, Min, Max } from 'class-validator';
 
 export class UpdateBankDto {
   @IsOptional()
@@ -10,4 +10,12 @@ export class UpdateBankDto {
   @IsString()
   @MaxLength(20)
   color?: string;
+
+  // Current balance as of now. Send null to stop tracking this bank's balance.
+  // (Can be negative for an overdrawn / OD account.)
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(-1e9)
+  @Max(1e11)
+  balance?: number | null;
 }

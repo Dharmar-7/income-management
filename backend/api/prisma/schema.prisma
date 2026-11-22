@@ -208,6 +208,10 @@ model Bank {
   id        String   @id @default(uuid())
   name      String                          // e.g. "IOB", "TMB"
   color     String   @default("indigo")     // palette key — teal/indigo/orange/…
+  // Balance the user typed in, and when. The app shows it moved forward by
+  // this bank's transactions since then (IOB/TMB SMS don't include balances).
+  balance   Float?
+  balanceAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

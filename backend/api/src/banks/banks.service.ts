@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateBankDto } from './dto/create-bank.dto';
 import { UpdateBankDto } from './dto/update-bank.dto';
+import { naturalTxType } from '../settlements/settlement.util';
+import { happenedAfter, istDayStart, moneyDirection, trackedBalance, type TxType } from './bank-balance.util';
 
 @Injectable()
 export class BanksService {
@@ -31,12 +33,50 @@ export class BanksService {
 
     const countMap = new Map(grouped.map(g => [g.bankId, g._count._all]));
     const lastMap = new Map(lastDates.map(g => [g.bankId, g._max.date]));
+    const tracked = await this.trackBalances(userId, banks);
 
     return banks.map(b => ({
       ...b,
       transactionCount: countMap.get(b.id) ?? 0,
       lastTransactionAt: lastMap.get(b.id) ?? null,
+      // null when the user hasn't set a balance for this bank
+      tracked: tracked.get(b.id) ?? null,
     }));
+  }
+
+  // For banks with a typed-in balance: move it forward by the bank's
+  // transactions since then. Only runs queries when some balance is set.
+  private async trackBalances(userId: string, banks: { id: string; balance: number | null; balanceAt: Date | null }[]) {
+    const out = new Map<string, ReturnType<typeof trackedBalance>>();
+    const anchored = banks.filter(b => b.balance != null && b.balanceAt != null);
+    if (anchored.length === 0) return out;
+
+    const since = new Date(Math.min(...anchored.map(b => istDayStart(b.balanceAt!).getTime())));
+    const txs = await this.prisma.transaction.findMany({
+      where: { userId, bankId: { in: anchored.map(b => b.id) }, date: { gte: since } },
+      select: { id: true, bankId: true, amount: true, type: true, date: true, createdAt: true },
+    });
+
+    // Settlement legs are re-typed TRANSFER; their real direction comes from the tab.
+    const transferIds = txs.filter(t => t.type === 'TRANSFER').map(t => t.id);
+    const transferAs = new Map<string, 'DEBIT' | 'CREDIT'>();
+    if (transferIds.length > 0) {
+      const legs = await this.prisma.settlementEntry.findMany({
+        where: { transactionId: { in: transferIds } },
+        select: { transactionId: true, kind: true, settlement: { select: { direction: true } } },
+      });
+      for (const l of legs) {
+        if (l.transactionId) transferAs.set(l.transactionId, naturalTxType(l.settlement.direction as any, l.kind as any));
+      }
+    }
+
+    for (const b of anchored) {
+      const moves = txs
+        .filter(t => t.bankId === b.id && happenedAfter(t, b.balanceAt!))
+        .map(t => ({ amount: t.amount, direction: moneyDirection(t.type as TxType, transferAs.get(t.id) ?? null) }));
+      out.set(b.id, trackedBalance(b.balance!, moves));
+    }
+    return out;
   }
 
   async create(clerkId: string, dto: CreateBankDto) {
@@ -60,6 +100,11 @@ export class BanksService {
         data: {
           ...(dto.name !== undefined && { name: dto.name.trim() }),
           ...(dto.color !== undefined && { color: dto.color?.trim() || 'indigo' }),
+          // Setting a balance re-anchors tracking at this moment.
+          ...(dto.balance !== undefined && {
+            balance: dto.balance,
+            balanceAt: dto.balance === null ? null : new Date(),
+          }),
         },
       });
     } catch (e: any) {

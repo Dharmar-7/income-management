@@ -38,6 +38,7 @@ const MORE_GROUPS = [
     title: 'Money',
     items: [
       { label: 'Brain',       icon: '🧠', route: 'brain'       },
+      { label: 'Balances',    icon: '💰', route: 'balances'    },
       { label: 'Safety Net',  icon: '🛟', route: 'safety-net' },
       { label: 'Recurring',   icon: '🔄', route: 'recurring'   },
       { label: 'Loans',       icon: '🏦', route: 'loans'       },
