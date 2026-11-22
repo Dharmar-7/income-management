@@ -156,7 +156,9 @@ async function loadJobs(token: string): Promise<JobsData> {
 
 export async function loadNews(): Promise<NewsData> {
   const items = await fetchNews('top');
-  return { items: items.slice(0, 20).map(n => ({ title: n.title, source: n.source, link: n.link })) };
+  // All of "Top" (up to 60, the same list the News screen shows). Titles and
+  // links only, so the widget's data stays small.
+  return { items: items.slice(0, 60).map(n => ({ title: n.title, source: n.source, link: n.link })) };
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────

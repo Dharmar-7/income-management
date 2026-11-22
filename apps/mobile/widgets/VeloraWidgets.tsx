@@ -373,6 +373,14 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
                 <TextWidget text={n.source} maxLines={1} style={{ fontSize: 10, color: p.faint, marginTop: 1 }} />
               </FlexWidget>
             ))}
+            {/* End of the list: the News screen has categories and search for more. */}
+            <FlexWidget
+              key="more"
+              style={{ width: 'match_parent', alignItems: 'center', paddingVertical: 10 }}
+              {...open('velora://news')}
+            >
+              <TextWidget text="See more in Velora ›" style={{ fontSize: 12, fontWeight: '700', color: p.primary }} />
+            </FlexWidget>
           </ListWidget>
         )}
     </FlexWidget>

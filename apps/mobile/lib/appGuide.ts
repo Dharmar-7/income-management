@@ -14,6 +14,14 @@ export interface Release { date: string; title: string; points: string[] }
 export const CHANGELOG: Release[] = [
   {
     date: '2026-11-22',
+    title: '📰 More headlines in the widget',
+    points: [
+      'The Headlines widget now holds up to 60 stories instead of 20: the full Top list from the News screen.',
+      'At the end of the list, “See more in Velora” opens News, with categories and search.',
+    ],
+  },
+  {
+    date: '2026-11-22',
     title: '💰 Bank balances',
     points: [
       'Your total bank balance now sits in the top-right corner of Home. Tap it to see each bank’s balance.',
