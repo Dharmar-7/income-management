@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import { useTheme } from '@/context/ThemeContext';
+import SlowSaveHint from '@/components/SlowSaveHint';
 import type { Theme } from '@/lib/theme';
 
 interface RecentTx {
@@ -275,6 +276,7 @@ export default function AddSettlementSheet({ visible, onClose, onSaved }: Props)
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>Create tab{legs.length ? ` · ${formatINR(total)}` : ''}</Text>}
             </TouchableOpacity>
           </View>
+          {saving && <SlowSaveHint />}
         </View>
       </View>
     </Modal>

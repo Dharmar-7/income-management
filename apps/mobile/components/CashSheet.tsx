@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@clerk/clerk-expo';
 import { apiFetch } from '@/lib/api';
+import SlowSaveHint from '@/components/SlowSaveHint';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import AppAlert from '@/components/AppAlert';
 import DatePickerField from '@/components/DatePickerField';
@@ -62,13 +63,7 @@ export default function CashSheet({ visible, mode, currentBalance, onClose, onSu
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISO);
   const [loading, setLoading] = useState(false);
-  // After a few seconds of saving, explain the wait (the server may be waking up).
-  const [slow, setSlow] = useState(false);
-  useEffect(() => {
-    if (!loading) { setSlow(false); return; }
-    const t = setTimeout(() => setSlow(true), 4000);
-    return () => clearTimeout(t);
-  }, [loading]);
+
 
   const options = mode === 'add' ? SOURCE_OPTIONS_IN : SOURCE_OPTIONS_OUT;
 
@@ -215,11 +210,7 @@ export default function CashSheet({ visible, mode, currentBalance, onClose, onSu
                   </Text>
               }
             </TouchableOpacity>
-            {slow && (
-              <Text style={{ color: c.textMuted, fontSize: 12, textAlign: 'center', marginTop: 10 }}>
-                Waking up the server… the first save after a while can take up to a minute.
-              </Text>
-            )}
+            {loading && <SlowSaveHint />}
 
           </ScrollView>
         </View>

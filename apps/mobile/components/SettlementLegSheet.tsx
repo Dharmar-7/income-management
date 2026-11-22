@@ -10,6 +10,7 @@ import { apiFetch } from '@/lib/api';
 import { useKeyboardHeight } from '@/hooks/useKeyboardHeight';
 import DatePickerField from '@/components/DatePickerField';
 import { useTheme } from '@/context/ThemeContext';
+import SlowSaveHint from '@/components/SlowSaveHint';
 import type { Theme } from '@/lib/theme';
 
 interface RecentTx {
@@ -194,6 +195,7 @@ export default function SettlementLegSheet({ visible, settlementId, kind, direct
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveText}>{isReturn ? 'Add return' : 'Add send'}</Text>}
             </TouchableOpacity>
           </View>
+          {saving && <SlowSaveHint />}
         </View>
       </View>
     </Modal>
