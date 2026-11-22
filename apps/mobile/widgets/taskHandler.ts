@@ -1,6 +1,9 @@
 import type { WidgetTaskHandlerProps } from 'react-native-android-widget';
-import { readSnapshot, writeSnapshot, readHideAmounts, WIDGET_NAMES, type WidgetName } from './snapshot';
-import { renderWidget, REFRESH_NEWS } from './VeloraWidgets';
+import {
+  readSnapshot, writeSnapshot, readHideAmounts, readNewsTabs, writeNewsTab, newsFor, withNews, isNewsCategory,
+  WIDGET_NAMES, type WidgetName, type NewsCategory,
+} from './snapshot';
+import { renderWidget, REFRESH_NEWS, SET_NEWS_TAB } from './VeloraWidgets';
 import { loadNews } from './refresh';
 import { TOGGLE_HABIT, toggleHabitTap } from './habitTaps';
 
@@ -18,8 +21,11 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
 export async function widgetTaskHandler({
   widgetInfo, widgetAction, clickAction, clickActionData, renderWidget: draw,
 }: WidgetTaskHandlerProps) {
-  if (widgetAction === 'WIDGET_DELETED') return;
   const name = widgetInfo.widgetName as WidgetName;
+  if (widgetAction === 'WIDGET_DELETED') {
+    if (name === 'VeloraNews') await writeNewsTab(widgetInfo.widgetId, null);
+    return;
+  }
   if (!(WIDGET_NAMES as readonly string[]).includes(name)) return;
 
   // Tick/untick a habit from the widget; it's saved to the server on next app open.
@@ -31,17 +37,26 @@ export async function widgetTaskHandler({
   let snap = await readSnapshot();
   const hide = await readHideAmounts();
 
+  let newsCategory: NewsCategory = 'top';
   if (name === 'VeloraNews') {
-    const manual = widgetAction === 'WIDGET_CLICK' && clickAction === REFRESH_NEWS;
-    if (manual || !snap.news || Date.now() - snap.news.at > NEWS_MAX_AGE_MS) {
-      if (manual && snap.news) draw(renderWidget(name, snap, hide, { refreshing: true }));
-      const news = await withTimeout(loadNews().catch(() => null), 12_000);
+    const click = widgetAction === 'WIDGET_CLICK';
+    newsCategory = (await readNewsTabs())[widgetInfo.widgetId] ?? 'top';
+    if (click && clickAction === SET_NEWS_TAB && isNewsCategory(clickActionData?.category)) {
+      newsCategory = clickActionData.category;
+      await writeNewsTab(widgetInfo.widgetId, newsCategory);
+    }
+    const manual = click && clickAction === REFRESH_NEWS;
+    const cur = newsFor(snap, newsCategory);
+    if (manual || !cur || Date.now() - cur.at > NEWS_MAX_AGE_MS) {
+      // Show the tab switch / spinner straight away, then fetch.
+      draw(renderWidget(name, snap, hide, { refreshing: true, newsCategory }));
+      const news = await withTimeout(loadNews(newsCategory).catch(() => null), 12_000);
       if (news) {
-        snap = { ...(await readSnapshot()), news: { at: Date.now(), data: news } };
+        snap = withNews(await readSnapshot(), newsCategory, { at: Date.now(), data: news });
         await writeSnapshot(snap);
       }
     }
   }
 
-  draw(renderWidget(name, snap, hide));
+  draw(renderWidget(name, snap, hide, { newsCategory }));
 }

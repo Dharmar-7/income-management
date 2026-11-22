@@ -70,7 +70,7 @@ export default function NewsScreen() {
   const { isSaved, toggle: toggleSaved } = useSavedArticles();
   const { has: isWatched, add: addWatch, items: watchItems } = useWatchlist();
   const router = useRouter();
-  const params = useLocalSearchParams<{ q?: string }>();
+  const params = useLocalSearchParams<{ q?: string; category?: string }>();
   const listRef = useRef<FlatList<NewsItem>>(null);
   useScrollToTop(listRef); // re-tap the News tab → scroll to top
   const [category, setCategory] = useState<CategoryKey>('top');
@@ -103,6 +103,15 @@ export default function NewsScreen() {
       setSearch(q);
     }
   }, [params.q]);
+
+  // "See more" on the Headlines widget opens News on the same category.
+  useEffect(() => {
+    const k = params.category;
+    if (typeof k === 'string' && CATEGORIES.some(cat => cat.key === k)) {
+      setCategory(k as CategoryKey);
+      router.setParams({ category: undefined });
+    }
+  }, [params.category, router]);
   const searching = searchTerm.length > 0;
 
   const query = useQuery({

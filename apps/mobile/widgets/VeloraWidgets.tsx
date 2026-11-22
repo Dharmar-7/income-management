@@ -4,8 +4,10 @@ import { FlexWidget, ListWidget, TextWidget } from 'react-native-android-widget'
 import type { WidgetRepresentation } from 'react-native-android-widget';
 import { readerDeepLink } from '@/lib/newsReader';
 import { TOGGLE_HABIT, rollHabits, dueToday, shownStreak } from './habitTaps';
-import type {
-  WidgetName, WidgetSnapshot, TodayData, HabitsData, HabitItem, SafetyData, BillItem, JobsData, NewsData,
+import {
+  NEWS_CATEGORIES, newsFor,
+  type NewsCategory, type WidgetName, type WidgetSnapshot, type TodayData, type HabitsData, type HabitItem,
+  type SafetyData, type BillItem, type JobsData, type NewsData,
 } from './snapshot';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,9 +339,33 @@ function Jobs({ p, d, at }: { p: Palette; d: JobsData; at: number }) {
 // Custom click action handled by taskHandler.ts (fetches fresh headlines).
 export const REFRESH_NEWS = 'REFRESH_NEWS';
 
-function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; refreshing: boolean }) {
+// Custom click action handled by taskHandler.ts: switch this widget's tab.
+export const SET_NEWS_TAB = 'SET_NEWS_TAB';
+
+function NewsTab({ p, cat, label, on }: { p: Palette; cat: NewsCategory; label: string; on: boolean }) {
   return (
-    // No root click: the list items and header buttons each have their own.
+    <FlexWidget
+      style={{
+        flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4, borderRadius: 10,
+        backgroundColor: on ? p.primary : p.card,
+      }}
+      clickAction={SET_NEWS_TAB}
+      clickActionData={{ category: cat }}
+    >
+      <TextWidget text={label} maxLines={1} style={{ fontSize: 11, fontWeight: '700', color: on ? p.onPrimary : p.muted }} />
+    </FlexWidget>
+  );
+}
+
+function News({ p, cat, news, refreshing }: {
+  p: Palette; cat: NewsCategory; news: { at: number; data: NewsData } | undefined; refreshing: boolean;
+}) {
+  const label = NEWS_CATEGORIES.find(c => c.key === cat)?.label ?? 'Top';
+  const moreUri = cat === 'top' ? 'velora://news' : `velora://news?category=${cat}`;
+  const items = news?.data.items ?? [];
+  const status = refreshing ? 'refreshing…' : news ? ago(news.at) : '';
+  return (
+    // No root click: the list items, tabs and header buttons each have their own.
     <FlexWidget
       style={{
         height: 'match_parent', width: 'match_parent', backgroundColor: p.bg,
@@ -347,9 +373,9 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
       }}
     >
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <TextWidget text="📰 Headlines" style={{ fontSize: 14, fontWeight: '700', color: p.text }} {...open('velora://news')} />
+        <TextWidget text="📰 Headlines" style={{ fontSize: 14, fontWeight: '700', color: p.text }} {...open(moreUri)} />
         <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TextWidget text={refreshing ? 'refreshing…' : ago(at)} style={{ fontSize: 11, color: p.faint }} />
+          {status ? <TextWidget text={status} style={{ fontSize: 11, color: p.faint }} /> : null}
           <FlexWidget
             style={{ marginLeft: 6, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: p.card }}
             clickAction={REFRESH_NEWS}
@@ -358,12 +384,24 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
           </FlexWidget>
         </FlexWidget>
       </FlexWidget>
-      {d.items.length === 0
-        ? <TextWidget text="Couldn’t load the news. Tap ↻ to try again." maxLines={2} style={{ fontSize: 13, color: p.muted, marginTop: 8 }} />
+
+      {/* Category tabs: each widget remembers its own. */}
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: 6, marginTop: 8 }}>
+        {NEWS_CATEGORIES.map(c => <NewsTab key={c.key} p={p} cat={c.key} label={c.label} on={c.key === cat} />)}
+      </FlexWidget>
+
+      {items.length === 0
+        ? (
+          <TextWidget
+            text={news ? 'Couldn’t load the news. Tap ↻ to try again.' : `Loading ${label} headlines…`}
+            maxLines={2}
+            style={{ fontSize: 13, color: p.muted, marginTop: 10 }}
+          />
+        )
         : (
           // Scrollable: Android renders this as a native list inside the widget.
-          <ListWidget style={{ height: 'match_parent', width: 'match_parent', marginTop: 6 }}>
-            {d.items.map((n, i) => (
+          <ListWidget style={{ height: 'match_parent', width: 'match_parent', marginTop: 4 }}>
+            {items.map((n, i) => (
               <FlexWidget
                 key={i}
                 style={{ width: 'match_parent', flexDirection: 'column', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: p.card }}
@@ -373,11 +411,11 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
                 <TextWidget text={n.source} maxLines={1} style={{ fontSize: 10, color: p.faint, marginTop: 1 }} />
               </FlexWidget>
             ))}
-            {/* End of the list: the News screen has categories and search for more. */}
+            {/* End of the list: the News screen has search and more. */}
             <FlexWidget
               key="more"
               style={{ width: 'match_parent', alignItems: 'center', paddingVertical: 10 }}
-              {...open('velora://news')}
+              {...open(moreUri)}
             >
               <TextWidget text="See more in Velora ›" style={{ fontSize: 12, fontWeight: '700', color: p.primary }} />
             </FlexWidget>
@@ -389,13 +427,13 @@ function News({ p, d, at, refreshing }: { p: Palette; d: NewsData; at: number; r
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palette, refreshing: boolean): React.JSX.Element {
+interface RenderOpts { refreshing: boolean; newsCategory: NewsCategory }
+
+function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palette, o: RenderOpts): React.JSX.Element {
   if (name === 'VeloraQuickAdd') return <QuickAdd p={p} />;
   if (name === 'VeloraNews') {
     // News needs no sign-in: it's public RSS, refreshed in the background.
-    return s.news
-      ? <News p={p} d={s.news.data} at={s.news.at} refreshing={refreshing} />
-      : <Message p={p} title="📰 Headlines" text="Loading headlines…" uri="velora://news" />;
+    return <News p={p} cat={o.newsCategory} news={newsFor(s, o.newsCategory)} refreshing={o.refreshing} />;
   }
   if (!s.signedIn) {
     return <Message p={p} title="Velora" text="Sign in to Velora to see this widget." />;
@@ -413,8 +451,9 @@ function renderFor(name: WidgetName, s: WidgetSnapshot, hide: boolean, p: Palett
 }
 
 export function renderWidget(
-  name: WidgetName, s: WidgetSnapshot, hide: boolean, opts: { refreshing?: boolean } = {},
+  name: WidgetName, s: WidgetSnapshot, hide: boolean,
+  opts: { refreshing?: boolean; newsCategory?: NewsCategory } = {},
 ): WidgetRepresentation {
-  const r = opts.refreshing ?? false;
-  return { light: renderFor(name, s, hide, LIGHT, r), dark: renderFor(name, s, hide, DARK, r) };
+  const o: RenderOpts = { refreshing: opts.refreshing ?? false, newsCategory: opts.newsCategory ?? 'top' };
+  return { light: renderFor(name, s, hide, LIGHT, o), dark: renderFor(name, s, hide, DARK, o) };
 }

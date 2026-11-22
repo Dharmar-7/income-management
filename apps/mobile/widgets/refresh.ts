@@ -6,7 +6,8 @@ import { computeSafetyNet, fetchSafetyData, readSafetyPrefs, type SafetyData as 
 import { readSavedSearches } from '@/lib/jobSearches';
 import { isJobFinderEnabled } from '@/lib/useJobFinder';
 import {
-  WIDGET_NAMES, SECTION_OF, readSnapshot, writeSnapshot, readHideAmounts,
+  WIDGET_NAMES, SECTION_OF, readSnapshot, writeSnapshot, readHideAmounts, readNewsTabs, newsFor, withNews,
+  type NewsCategory,
   type WidgetName, type Section, type WidgetSnapshot,
   type TodayData, type HabitsData, type SafetyData, type BillItem, type JobsData, type NewsData,
 } from './snapshot';
@@ -154,8 +155,8 @@ async function loadJobs(token: string): Promise<JobsData> {
   return { state: 'ok', newCount, focusId, label, items };
 }
 
-export async function loadNews(): Promise<NewsData> {
-  const items = await fetchNews('top');
+export async function loadNews(cat: NewsCategory = 'top'): Promise<NewsData> {
+  const items = await fetchNews(cat);
   // All of "Top" (up to 60, the same list the News screen shows). Titles and
   // links only, so the widget's data stays small.
   return { items: items.slice(0, 60).map(n => ({ title: n.title, source: n.source, link: n.link })) };
@@ -166,9 +167,12 @@ export async function loadNews(): Promise<NewsData> {
 // Re-draw every placed widget from the stored snapshot (no network).
 export async function redrawWidgets(names: readonly WidgetName[] = WIDGET_NAMES): Promise<void> {
   if (!isAndroid) return;
-  const [snap, hide] = await Promise.all([readSnapshot(), readHideAmounts()]);
+  const [snap, hide, tabs] = await Promise.all([readSnapshot(), readHideAmounts(), readNewsTabs()]);
   await Promise.all(names.map(n =>
-    requestWidgetUpdate({ widgetName: n, renderWidget: () => renderWidget(n, snap, hide) }).catch(() => undefined),
+    requestWidgetUpdate({
+      widgetName: n,
+      renderWidget: (info) => renderWidget(n, snap, hide, { newsCategory: tabs[info.widgetId] ?? 'top' }),
+    }).catch(() => undefined),
   ));
 }
 
@@ -206,7 +210,16 @@ export async function refreshWidgets(
       }));
     }
     if (stale('jobs')) tasks.push(loadJobs(token).then(d => { snap.jobs = { at: now, data: d }; }));
-    if (stale('news')) tasks.push(loadNews().then(d => { snap.news = { at: now, data: d }; }));
+    if (wanted.has('news')) {
+      // Every tab currently shown by a Headlines widget (usually just Top).
+      const cats = new Set<NewsCategory>(['top', ...Object.values(await readNewsTabs())]);
+      for (const cat of cats) {
+        const cur = newsFor(snap, cat);
+        if (opts.force?.includes('news') || !cur || now - cur.at >= MIN_AGE_MS.news) {
+          tasks.push(loadNews(cat).then(d => { Object.assign(snap, withNews(snap, cat, { at: now, data: d })); }));
+        }
+      }
+    }
 
     // One failing section (offline, slow job boards…) mustn't block the others.
     await Promise.allSettled(tasks);
@@ -223,6 +236,6 @@ export async function refreshWidgets(
 export async function clearWidgets(): Promise<void> {
   if (!isAndroid) return;
   const snap = await readSnapshot();
-  await writeSnapshot({ signedIn: false, news: snap.news });
+  await writeSnapshot({ signedIn: false, news: snap.news, newsCats: snap.newsCats });
   await redrawWidgets();
 }

@@ -88,11 +88,33 @@ export interface WidgetSnapshot {
   safety?: Stamped<SafetyData>;
   bills?: Stamped<BillItem[]>;
   jobs?: Stamped<JobsData>;
-  news?: Stamped<NewsData>;
+  news?: Stamped<NewsData>; // "Top"
+  // Markets / Tech / Science, fetched only when a Headlines widget shows that tab.
+  newsCats?: Partial<Record<NewsCategory, Stamped<NewsData>>>;
+}
+
+export type NewsCategory = 'top' | 'markets' | 'tech' | 'science';
+export const NEWS_CATEGORIES: { key: NewsCategory; label: string }[] = [
+  { key: 'top', label: 'Top' },
+  { key: 'markets', label: 'Markets' },
+  { key: 'tech', label: 'Tech' },
+  { key: 'science', label: 'Science' },
+];
+export function isNewsCategory(v: unknown): v is NewsCategory {
+  return typeof v === 'string' && NEWS_CATEGORIES.some(c => c.key === v);
+}
+
+export function newsFor(s: WidgetSnapshot, cat: NewsCategory): Stamped<NewsData> | undefined {
+  return cat === 'top' ? s.news : s.newsCats?.[cat];
+}
+
+export function withNews(s: WidgetSnapshot, cat: NewsCategory, v: Stamped<NewsData>): WidgetSnapshot {
+  return cat === 'top' ? { ...s, news: v } : { ...s, newsCats: { ...s.newsCats, [cat]: v } };
 }
 
 const SNAPSHOT_KEY = 'velora-widgets-snapshot';
 const HIDE_AMOUNTS_KEY = 'velora-widgets-hide-amounts';
+const NEWS_TAB_KEY = 'velora-widgets-news-tab'; // { [widgetId]: NewsCategory }
 
 export async function readSnapshot(): Promise<WidgetSnapshot> {
   try {
@@ -112,4 +134,21 @@ export async function readHideAmounts(): Promise<boolean> {
 
 export async function writeHideAmounts(hide: boolean): Promise<void> {
   await AsyncStorage.setItem(HIDE_AMOUNTS_KEY, hide ? '1' : '0');
+}
+
+// Each Headlines widget remembers its own tab, so two widgets can show
+// different categories.
+export async function readNewsTabs(): Promise<Record<string, NewsCategory>> {
+  try {
+    const raw = await AsyncStorage.getItem(NEWS_TAB_KEY);
+    if (raw) return JSON.parse(raw) as Record<string, NewsCategory>;
+  } catch { /* corrupt → all Top */ }
+  return {};
+}
+
+export async function writeNewsTab(widgetId: number, cat: NewsCategory | null): Promise<void> {
+  const tabs = await readNewsTabs();
+  if (cat === null || cat === 'top') delete tabs[widgetId];
+  else tabs[widgetId] = cat;
+  await AsyncStorage.setItem(NEWS_TAB_KEY, JSON.stringify(tabs));
 }

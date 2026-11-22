@@ -14,10 +14,11 @@ export interface Release { date: string; title: string; points: string[] }
 export const CHANGELOG: Release[] = [
   {
     date: '2026-11-22',
-    title: '📰 More headlines in the widget',
+    title: '📰 Headlines widget: categories and more stories',
     points: [
-      'The Headlines widget now holds up to 60 stories instead of 20: the full Top list from the News screen.',
-      'At the end of the list, “See more in Velora” opens News, with categories and search.',
+      'Tabs at the top of the Headlines widget switch between Top, Markets, Tech and Science. Each widget remembers its tab.',
+      'Each tab holds its full list (up to 60 stories for Top) instead of 20.',
+      'At the end of the list, “See more in Velora” opens News on the same category.',
     ],
   },
   {
