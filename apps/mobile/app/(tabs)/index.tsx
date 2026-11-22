@@ -14,6 +14,7 @@ import { useScrollToTop } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { apiFetch } from '@/lib/api';
 import CashSheet from '@/components/CashSheet';
+import BankBalanceChip from '@/components/BankBalances';
 import EventsTicker from '@/components/EventsTicker';
 import HabitsTodayCard from '@/components/HabitsTodayCard';
 import EmergencyModePanel from '@/components/EmergencyModePanel';
@@ -140,6 +141,7 @@ export default function DashboardScreen() {
 
   function handleRefresh() {
     dashQuery.refetch();
+    queryClient.invalidateQueries({ queryKey: ['banks'] }); // header bank balance
   }
 
   return (
@@ -163,7 +165,7 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />}
       >
-        {/* Greeting + theme toggle */}
+        {/* Greeting + bank balance + theme toggle */}
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <Text style={styles.greeting}>{greeting}, {user?.firstName ?? 'there'} 👋</Text>
@@ -171,6 +173,7 @@ export default function DashboardScreen() {
               <Text style={styles.subGreeting}>{MONTHS[d.summary.month]} {d.summary.year} summary</Text>
             )}
           </View>
+          <BankBalanceChip />
           <TouchableOpacity
             style={styles.themeToggle}
             onPress={() => setMode(scheme === 'dark' ? 'light' : 'dark')}

@@ -16,9 +16,9 @@ export const CHANGELOG: Release[] = [
     date: '2026-11-22',
     title: '💰 Bank balances',
     points: [
-      'New Balances screen (More → Money → 💰 Balances) lists every bank with its current balance, plus cash in hand and your total money.',
+      'Your total bank balance now sits in the top-right corner of Home. Tap it to see each bank’s balance.',
       'IOB and TMB SMS don’t include the balance, so type each bank’s balance once. Velora keeps it up to date from that bank’s transactions after that.',
-      'Each bank shows what you set, when, and how much it has changed since. Tap Update anytime to correct it.',
+      'Each bank shows what you set, when, and how much it has changed since. Tap Update in that list anytime to correct it.',
     ],
   },
   {
@@ -245,7 +245,7 @@ export const GUIDE: GuideSection[] = [
       { icon: '💵', title: 'Cash in Hand', what: 'Tracks physical cash separately from bank money.', how: 'Use the Add / Spend buttons on the Home cash card.' },
       { icon: '🎯', title: 'Budgets', what: 'Set a monthly cap per category and watch how much is left.' },
       { icon: '🔄', title: 'Recurring', what: 'Log repeating bills, EMIs and subscriptions so they’re expected, not surprises.' },
-      { icon: '💰', title: 'Bank balances', what: 'Every bank’s current balance, cash in hand, and your total money in one place.', how: 'Open Balances, tap “Set balance” on a bank and type what your bank app shows. Velora moves it forward with that bank’s transactions; tap Update if it ever drifts.' },
+      { icon: '💰', title: 'Bank balances', what: 'Your total bank balance in the top-right corner of Home, with each bank’s balance one tap away.', how: 'Tap the 🏦 Bank chip on Home, then “Set balance” on a bank and type what your bank app shows. Velora moves it forward with that bank’s transactions; tap Update if it ever drifts.' },
       { icon: '🏦', title: 'Loans', what: 'Track each loan’s EMI, what you’ve paid and what’s left.' },
       { icon: '🤝', title: 'Settlements', what: 'Money you owe or are owed by other people — settle up without forgetting.', how: 'Tap ＋ to open a tab, then add sends and returns. A tab moves to History once it’s paid off; use ↩ Reopen there to undo the last return.' },
     ],
