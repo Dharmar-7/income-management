@@ -11,6 +11,7 @@ import AddSettlementSheet from '@/components/AddSettlementSheet';
 import SettlementLegSheet from '@/components/SettlementLegSheet';
 import AppAlert from '@/components/AppAlert';
 import { useTheme } from '@/context/ThemeContext';
+import { useToast } from '@/context/ToastContext';
 import type { Theme } from '@/lib/theme';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export default function SettlementsScreen() {
   const qc = useQueryClient();
   const { theme: c } = useTheme();
   const s = useMemo(() => makeStyles(c), [c]);
+  const toast = useToast();
 
   const [tab, setTab] = useState<'pending' | 'history'>('pending');
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -100,20 +102,31 @@ export default function SettlementsScreen() {
     qc.invalidateQueries({ queryKey: ['dashboard'] }); // tx types change → summary changes
   }
 
+  // Runs a confirmed action and reports the outcome, so a delete or settle
+  // never finishes (or fails) silently after the dialog closes.
+  async function runAction(action: () => Promise<unknown>, done: string, failed: string) {
+    try {
+      await action();
+      invalidateAll();
+      toast.show(done, { type: 'success' });
+    } catch (e) {
+      toast.show(e instanceof Error && e.message ? `${failed}: ${e.message}` : failed, { type: 'error' });
+    }
+  }
+
   function handleSettleFull(item: SettlementItem) {
     setAlertData({
       title: 'Settle in full',
       message: `Record ${formatINR(item.outstanding)} ${item.direction === 'SENT' ? 'received back from' : 'repaid to'} ${item.personName}? This closes the tab.`,
       icon: '✅',
       confirmLabel: 'Settle',
-      onConfirm: async () => {
+      onConfirm: () => runAction(async () => {
         const token = await getToken();
         await apiFetch(`/settlements/${item.id}/settle`, token!, {
           method: 'POST',
           body: JSON.stringify({ settledAt: new Date().toISOString() }),
         });
-        invalidateAll();
-      },
+      }, `Settled with ${item.personName}. Moved to History.`, 'Couldn’t settle'),
     });
   }
 
@@ -124,11 +137,10 @@ export default function SettlementsScreen() {
       icon: '↩️',
       confirmLabel: 'Remove',
       confirmDestructive: true,
-      onConfirm: async () => {
+      onConfirm: () => runAction(async () => {
         const token = await getToken();
         await apiFetch(`/settlements/${item.id}/entries/${entry.id}`, token!, { method: 'DELETE' });
-        invalidateAll();
-      },
+      }, 'Transaction removed from the tab', 'Couldn’t remove it'),
     });
   }
 
@@ -139,11 +151,10 @@ export default function SettlementsScreen() {
       icon: '🗑️',
       confirmLabel: 'Delete',
       confirmDestructive: true,
-      onConfirm: async () => {
+      onConfirm: () => runAction(async () => {
         const token = await getToken();
         await apiFetch(`/settlements/${item.id}`, token!, { method: 'DELETE' });
-        invalidateAll();
-      },
+      }, `Tab with ${item.personName} deleted`, 'Couldn’t delete the tab'),
     });
   }
 
